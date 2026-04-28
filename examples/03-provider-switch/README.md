@@ -17,8 +17,7 @@ Demonstrates:
 ## Run
 
 ```sh
-cd reference
-bundle exec ruby ../examples/03-provider-switch/run.rb
+bundle exec ruby examples/03-provider-switch/run.rb
 ```
 
 ## Expected output

@@ -3,7 +3,7 @@
 Ruby reference implementation of [Harnas](https://github.com/Tedo-ai/harnas) —
 a specification for LLM agent harnesses. Passes 5/5 conformance fixtures
 byte-identically with the spec; live providers Anthropic + OpenAI + Gemini;
-539 RSpec examples; rubocop clean.
+542 RSpec examples; rubocop clean.
 
 **Version 0.1.0** (2026-04-28). Tracks Harnas spec 0.1.0.
 
@@ -28,7 +28,7 @@ LICENSE                      — MIT
 
 ```sh
 bundle install
-bundle exec rspec               # 539 examples
+bundle exec rspec               # 542 examples
 bundle exec rubocop             # clean
 bundle exec bin/conformance.rb  # 5/5 fixtures
 bundle exec bin/chat.rb         # interactive REPL
@@ -36,7 +36,9 @@ bundle exec bin/chat.rb         # interactive REPL
 
 ## Live providers
 
-Set the relevant API key in `.env` (gitignored):
+Set the relevant API key in `.env` (gitignored) or the environment.
+`Harnas::Manifest.load` and `Harnas::Agent.from_manifest` resolve the
+matching key automatically unless `api_keys:` explicitly overrides it:
 
 ```
 ANTHROPIC_API_KEY=sk-ant-...

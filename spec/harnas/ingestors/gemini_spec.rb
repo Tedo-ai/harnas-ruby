@@ -159,10 +159,7 @@ RSpec.describe Harnas::Ingestors::Gemini do
 
   describe "conformance against recorded fixture" do
     let(:fixture_path) do
-      File.expand_path(
-        "../../../../spec/conformance/fixtures/hello-one-word/gemini/response.json",
-        __dir__
-      )
+      harnas_conformance_fixture("hello-one-word", "gemini", "response.json")
     end
 
     it "produces a valid assistant_message event from the recorded response" do

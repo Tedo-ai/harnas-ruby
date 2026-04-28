@@ -62,7 +62,7 @@ RSpec.describe Harnas::Providers::OpenAI do
 
   describe "conformance against recorded fixture" do
     let(:fixture_dir) do
-      File.expand_path("../../../../spec/conformance/fixtures/hello-one-word/openai", __dir__)
+      harnas_conformance_fixture("hello-one-word", "openai")
     end
 
     it "produces a response that matches the recorded response shape" do

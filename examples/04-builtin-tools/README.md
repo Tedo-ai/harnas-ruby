@@ -36,8 +36,7 @@ should compose them with permission strategies (`HumanApproval`,
 ## Run
 
 ```sh
-cd reference
-bundle exec ruby ../examples/04-builtin-tools/run.rb
+bundle exec ruby examples/04-builtin-tools/run.rb
 ```
 
 ## Expected output

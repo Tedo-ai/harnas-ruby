@@ -84,10 +84,7 @@ RSpec.describe Harnas::Projections::OpenAI do
 
   describe "conformance against recorded fixture" do
     let(:fixture_path) do
-      File.expand_path(
-        "../../../../spec/conformance/fixtures/hello-one-word/openai/request.json",
-        __dir__
-      )
+      harnas_conformance_fixture("hello-one-word", "openai", "request.json")
     end
 
     it "produces exactly the recorded request body for the canonical Log" do

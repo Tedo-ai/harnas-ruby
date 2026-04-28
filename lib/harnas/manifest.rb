@@ -31,8 +31,10 @@ module Harnas
     SCHEMA_PATH =
       if ENV["HARNAS_SPEC"]
         File.join(ENV["HARNAS_SPEC"], "schemas", "agent-manifest.schema.json")
-      elsif File.exist?(File.expand_path("../../../harnas/schemas/agent-manifest.schema.json", __dir__))
-        File.expand_path("../../../harnas/schemas/agent-manifest.schema.json", __dir__)
+      elsif File.exist?(File.expand_path("../../../harnas/schemas/agent-manifest.schema.json",
+                                         __dir__))
+        File.expand_path("../../../harnas/schemas/agent-manifest.schema.json",
+                         __dir__)
       else
         File.expand_path("../../../spec/schemas/agent-manifest.schema.json", __dir__)
       end
@@ -52,8 +54,10 @@ module Harnas
     #                    of the form #call(arguments_hash) -> String.
     # strategy_handlers: - Hash mapping strategy-scoped callable names (e.g. a
     #                    HumanApproval prompt name) to callables.
-    # api_keys:        - Hash mapping provider kinds (symbols) to API keys;
-    #                    required for non-mock providers.
+    # api_keys:        - Hash mapping provider kinds (symbols) to API keys.
+    #                    Explicit values override ENV fallbacks. Non-mock
+    #                    providers require either api_keys[kind] or the
+    #                    matching provider env var.
     def self.load(source, tool_handlers: {}, strategy_handlers: {}, api_keys: {})
       manifest = parse_source(source)
       validate!(manifest)
@@ -270,7 +274,7 @@ module Harnas
 
       {
         projection: build_projection_instance(projection_klass, provider_spec, registry, system),
-        provider: build_provider_instance(provider_klass, kind, info, api_keys),
+        provider: build_provider_instance(provider_klass, kind, info, resolve_api_keys(api_keys)),
         ingestor: ingestor_klass.new
       }
     end
@@ -294,6 +298,18 @@ module Harnas
       else
         provider_klass.new
       end
+    end
+
+    def self.resolve_api_keys(api_keys)
+      explicit = api_keys.each_with_object({}) do |(key, value), result|
+        result[key.respond_to?(:to_sym) ? key.to_sym : key] = value
+      end
+
+      {
+        anthropic: ENV.fetch("ANTHROPIC_API_KEY", nil),
+        openai: ENV.fetch("OPENAI_API_KEY", nil),
+        gemini: ENV.fetch("GEMINI_API_KEY", nil)
+      }.merge(explicit)
     end
 
     def self.build_registry(tools_spec, tool_handlers:)

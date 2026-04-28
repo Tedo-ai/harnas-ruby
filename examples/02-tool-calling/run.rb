@@ -10,9 +10,9 @@
 #
 # Uses a ScriptedProvider so the example is deterministic — no API
 # keys required. To run against a live provider, change the manifest's
-# provider.kind and pass an api_key to Agent.from_manifest.
+# provider.kind and set the matching provider API key in the environment.
 
-$LOAD_PATH.unshift File.expand_path("../../reference/lib", __dir__)
+$LOAD_PATH.unshift File.expand_path("../../lib", __dir__)
 
 require "time"
 require "harnas/agent"

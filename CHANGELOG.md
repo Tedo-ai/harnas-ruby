@@ -7,6 +7,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and Harnas adheres to [Semantic Versioning](https://semver.org/) on
 the specification as a whole.
 
+## [Unreleased]
+
+### Reference implementation (Ruby)
+
+#### Changed
+
+- `Harnas::Manifest.load` now resolves provider API keys from the
+  environment by default (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+  `GEMINI_API_KEY`), while explicit `api_keys:` values still
+  override the environment.
+- Public examples now run from the `harnas-ruby` repository root and
+  rely on manifest-level API key resolution instead of manually
+  passing keys through each example.
+- RSpec conformance fixture paths now use the same `HARNAS_SPEC` /
+  sibling checkout / legacy monorepo resolution order as the
+  conformance CLI.
+
 ## [0.1.0] — 2026-04-28
 
 First substantively releasable version. The specification and the

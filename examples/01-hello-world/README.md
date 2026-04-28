@@ -13,9 +13,8 @@ Uses the mock provider — no API key required.
 From the repository root:
 
 ```sh
-cd reference
 bundle install                              # one-time
-bundle exec ruby ../examples/01-hello-world/run.rb
+bundle exec ruby examples/01-hello-world/run.rb
 ```
 
 ## Expected output
@@ -35,4 +34,4 @@ log has 2 events:
 
 The mock provider always returns `"ok"`. Swap the manifest's
 `provider.kind` to `"anthropic"`, `"openai"`, or `"gemini"` and set the
-corresponding `api_key` on load to run against a live model.
+matching provider API key in the environment to run against a live model.

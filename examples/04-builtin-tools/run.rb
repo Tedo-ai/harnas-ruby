@@ -13,7 +13,7 @@
 #   2. calls read_file on one of its entries
 #   3. produces a final text reply
 
-$LOAD_PATH.unshift File.expand_path("../../reference/lib", __dir__)
+$LOAD_PATH.unshift File.expand_path("../../lib", __dir__)
 
 require "tmpdir"
 require "harnas/agent"
@@ -48,7 +48,8 @@ scripted_responses = [
   {
     "content" => [
       { "type" => "text",
-        "text" => "The directory holds alpha.txt and beta.txt; alpha contains \"contents of alpha\"." }
+        "text" => "The directory holds alpha.txt and beta.txt; " \
+                  "alpha contains \"contents of alpha\"." }
     ],
     "stop_reason" => "end_turn",
     "usage" => { "input_tokens" => 44, "output_tokens" => 16 }

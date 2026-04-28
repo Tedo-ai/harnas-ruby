@@ -11,9 +11,9 @@ provider endpoint, using everything we've built:
 - `Compaction::MarkerTail` installed as a strategy
 - Provider-switchable via `--provider anthropic|openai|gemini`
 
-**Requires an API key.** Put it in `reference/.env` as
-`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GEMINI_API_KEY`. The script
-loads dotenv from there automatically.
+**Requires an API key.** Set `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+or `GEMINI_API_KEY` in the environment or `.env`. The manifest loader
+resolves the matching key automatically for the selected provider.
 
 **Auto-saves every run** to
 `examples/05-codebase-qa/runs/<provider>-<YYYYMMDD-HHMMSS>.jsonl`
@@ -24,19 +24,18 @@ gitignored.
 ## Run
 
 ```sh
-cd reference
-bundle exec ruby ../examples/05-codebase-qa/run.rb \
+bundle exec ruby examples/05-codebase-qa/run.rb \
   "what compaction strategies does this repo ship?"
 ```
 
 Other providers:
 
 ```sh
-bundle exec ruby ../examples/05-codebase-qa/run.rb --provider openai \
+bundle exec ruby examples/05-codebase-qa/run.rb --provider openai \
   "summarize the canonical event types in spec/01-overview.md"
 
-bundle exec ruby ../examples/05-codebase-qa/run.rb --provider gemini \
-  "find all :tool_result emissions in reference/lib"
+bundle exec ruby examples/05-codebase-qa/run.rb --provider gemini \
+  "find all :tool_result emissions in lib"
 ```
 
 ## Good dogfood prompts (copy-paste)

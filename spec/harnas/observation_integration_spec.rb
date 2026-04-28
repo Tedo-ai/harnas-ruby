@@ -17,10 +17,7 @@ RSpec.describe "Observation integration" do
   after  { Harnas::Observation.reset! }
 
   def fixture_dir(provider)
-    File.expand_path(
-      "../../../spec/conformance/fixtures/hello-one-word/#{provider}",
-      __dir__
-    )
+    harnas_conformance_fixture("hello-one-word", provider)
   end
 
   describe "a full smoke session" do

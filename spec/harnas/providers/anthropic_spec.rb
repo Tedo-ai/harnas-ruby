@@ -75,7 +75,7 @@ RSpec.describe Harnas::Providers::Anthropic do
 
   describe "conformance against recorded fixture" do
     let(:fixture_dir) do
-      File.expand_path("../../../../spec/conformance/fixtures/hello-one-word/anthropic", __dir__)
+      harnas_conformance_fixture("hello-one-word", "anthropic")
     end
 
     it "produces a response that matches the recorded response shape" do

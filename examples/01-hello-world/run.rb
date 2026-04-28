@@ -7,7 +7,7 @@
 # user message, prints the assistant's reply. Runs against the mock
 # provider by default — no API keys required.
 
-$LOAD_PATH.unshift File.expand_path("../../reference/lib", __dir__)
+$LOAD_PATH.unshift File.expand_path("../../lib", __dir__)
 
 require "harnas/agent"
 

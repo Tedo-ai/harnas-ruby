@@ -10,8 +10,7 @@ module Harnas
   # One-line entry point for loading a manifest, installing its
   # strategies, and driving a conversation.
   #
-  #   agent = Harnas::Agent.from_manifest("examples/01-hello-world/manifest.json",
-  #                                       api_keys: { anthropic: ENV.fetch("ANTHROPIC_API_KEY") })
+  #   agent = Harnas::Agent.from_manifest("examples/01-hello-world/manifest.json")
   #   agent.chat("hello").text
   #   agent.chat("and again")       # the Log is preserved across calls
   #   agent.log                     # full append-only event log

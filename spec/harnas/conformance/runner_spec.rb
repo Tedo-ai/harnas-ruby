@@ -3,7 +3,7 @@
 require "harnas/conformance/runner"
 
 RSpec.describe Harnas::Conformance::Runner do
-  fixtures_dir = File.expand_path("../../../../spec/conformance/agents", __dir__)
+  fixtures_dir = HarnasSpecPaths.conformance_agents
 
   # Discover every fixture directory at load time so each shows up as
   # its own example. A regression in any one produces a targeted

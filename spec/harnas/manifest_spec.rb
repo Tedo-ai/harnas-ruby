@@ -6,6 +6,14 @@ require "harnas/manifest"
 require "harnas/hooks"
 
 RSpec.describe Harnas::Manifest do
+  around do |example|
+    saved = ENV.to_h
+    %w[ANTHROPIC_API_KEY OPENAI_API_KEY GEMINI_API_KEY].each { |key| ENV.delete(key) }
+    example.run
+  ensure
+    ENV.replace(saved)
+  end
+
   let(:basic_manifest) do
     {
       "harnas_version" => "0.1",
@@ -86,6 +94,39 @@ RSpec.describe Harnas::Manifest do
       )
       loaded = described_class.load(manifest, api_keys: { anthropic: "sk-test" })
       expect(loaded.provider).to be_a(Harnas::Providers::Anthropic)
+    end
+
+    it "falls back to the provider's environment API key" do
+      ENV["ANTHROPIC_API_KEY"] = "sk-env"
+      manifest = basic_manifest.merge(
+        "provider" => { "kind" => "anthropic", "model" => "claude-x", "max_tokens" => 100 }
+      )
+
+      loaded = described_class.load(manifest)
+
+      expect(loaded.provider.instance_variable_get(:@api_key)).to eq("sk-env")
+    end
+
+    it "prefers an explicit api_key over the environment fallback" do
+      ENV["ANTHROPIC_API_KEY"] = "sk-env"
+      manifest = basic_manifest.merge(
+        "provider" => { "kind" => "anthropic", "model" => "claude-x", "max_tokens" => 100 }
+      )
+
+      loaded = described_class.load(manifest, api_keys: { anthropic: "sk-explicit" })
+
+      expect(loaded.provider.instance_variable_get(:@api_key)).to eq("sk-explicit")
+    end
+
+    it "accepts string-keyed explicit api_keys over the environment fallback" do
+      ENV["ANTHROPIC_API_KEY"] = "sk-env"
+      manifest = basic_manifest.merge(
+        "provider" => { "kind" => "anthropic", "model" => "claude-x", "max_tokens" => 100 }
+      )
+
+      loaded = described_class.load(manifest, api_keys: { "anthropic" => "sk-string" })
+
+      expect(loaded.provider.instance_variable_get(:@api_key)).to eq("sk-string")
     end
   end
 

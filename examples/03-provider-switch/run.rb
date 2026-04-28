@@ -10,7 +10,7 @@
 # across two different provider projections and prints the request
 # body each would send for the next turn.
 
-$LOAD_PATH.unshift File.expand_path("../../reference/lib", __dir__)
+$LOAD_PATH.unshift File.expand_path("../../lib", __dir__)
 
 require "json"
 require "harnas/agent"

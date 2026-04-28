@@ -87,7 +87,7 @@ RSpec.describe Harnas::Providers::Gemini do
 
   describe "conformance against recorded fixture" do
     let(:fixture_dir) do
-      File.expand_path("../../../../spec/conformance/fixtures/hello-one-word/gemini", __dir__)
+      harnas_conformance_fixture("hello-one-word", "gemini")
     end
 
     it "produces a response that matches the recorded response shape" do

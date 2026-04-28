@@ -92,10 +92,7 @@ RSpec.describe Harnas::Projections::Gemini do
 
   describe "conformance against recorded fixture" do
     let(:fixture_path) do
-      File.expand_path(
-        "../../../../spec/conformance/fixtures/hello-one-word/gemini/request.json",
-        __dir__
-      )
+      harnas_conformance_fixture("hello-one-word", "gemini", "request.json")
     end
 
     it "produces exactly the recorded request body for the canonical Log" do

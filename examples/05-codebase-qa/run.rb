@@ -10,21 +10,20 @@
 #   - StaleReadGuard wrapping read/edit/write
 #   - MarkerTail compaction (from the manifest)
 #
-# Requires API keys in reference/.env — the script loads dotenv
-# from there. Pick a provider via --provider; the default is
-# anthropic.
+# Requires API keys in .env or the environment — the manifest loader
+# resolves the right key for the selected provider. Pick a provider
+# via --provider; the default is anthropic.
 #
 # Usage:
-#   cd reference
-#   bundle exec ruby ../examples/05-codebase-qa/run.rb \
+#   bundle exec ruby examples/05-codebase-qa/run.rb \
 #     [--provider anthropic|openai|gemini] \
 #     [--model MODEL] \
 #     "your question here"
 
-$LOAD_PATH.unshift File.expand_path("../../reference/lib", __dir__)
+$LOAD_PATH.unshift File.expand_path("../../lib", __dir__)
 
 require "dotenv"
-Dotenv.load(File.expand_path("../../reference/.env", __dir__))
+Dotenv.load(File.expand_path("../../.env", __dir__))
 
 require "optparse"
 require "json"
@@ -49,19 +48,6 @@ if prompt_args.empty?
 end
 prompt = prompt_args.join(" ")
 
-env_key =
-  case options[:provider]
-  when "anthropic" then "ANTHROPIC_API_KEY"
-  when "openai"    then "OPENAI_API_KEY"
-  when "gemini"    then "GEMINI_API_KEY"
-  else
-    abort "unsupported provider: #{options[:provider]}"
-  end
-
-api_key = ENV.fetch(env_key) do
-  abort "#{env_key} is not set (looked in reference/.env)"
-end
-
 manifest_path = File.expand_path("manifest.json", __dir__)
 manifest = JSON.parse(File.read(manifest_path))
 manifest["provider"]["kind"] = options[:provider]
@@ -77,7 +63,6 @@ manifest["provider"]["model"] = resolved_model
 
 agent = Harnas::Agent.from_manifest(
   manifest,
-  api_keys: { options[:provider].to_sym => api_key },
   tool_handlers: Harnas::Tools::Builtin.handlers
 )
 
@@ -111,14 +96,14 @@ def save_session(agent, options)
   return if options[:no_save]
 
   save_path =
-    if options[:save] != :default
-      options[:save]
-    else
+    if options[:save] == :default
       runs_dir = File.expand_path("runs", __dir__)
       Dir.mkdir(runs_dir) unless File.directory?(runs_dir)
       stamp = Time.now.utc.strftime("%Y%m%d-%H%M%S")
       suffix = options[:failed] ? "-failed" : ""
       File.join(runs_dir, "#{options[:provider]}-#{stamp}#{suffix}.jsonl")
+    else
+      options[:save]
     end
   agent.session.save(save_path)
   puts "saved: #{save_path}"

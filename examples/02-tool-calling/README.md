@@ -15,8 +15,7 @@ example is deterministic — no API key required.
 ## Run
 
 ```sh
-cd reference
-bundle exec ruby ../examples/02-tool-calling/run.rb
+bundle exec ruby examples/02-tool-calling/run.rb
 ```
 
 ## Expected output
