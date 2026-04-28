@@ -23,6 +23,10 @@ the specification as a whole.
 - RSpec conformance fixture paths now use the same `HARNAS_SPEC` /
   sibling checkout / legacy monorepo resolution order as the
   conformance CLI.
+- `bin/harnas` now provides manifest-driven `chat` and `run`
+  commands. The old `bin/chat.rb` entry point delegates to
+  `bin/harnas chat`.
+- `erb` was updated to 6.0.4.
 
 ## [0.1.0] — 2026-04-28
 

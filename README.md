@@ -3,7 +3,7 @@
 Ruby reference implementation of [Harnas](https://github.com/Tedo-ai/harnas) —
 a specification for LLM agent harnesses. Passes 5/5 conformance fixtures
 byte-identically with the spec; live providers Anthropic + OpenAI + Gemini;
-542 RSpec examples; rubocop clean.
+547 RSpec examples; rubocop clean.
 
 **Version 0.1.0** (2026-04-28). Tracks Harnas spec 0.1.0.
 
@@ -28,11 +28,25 @@ LICENSE                      — MIT
 
 ```sh
 bundle install
-bundle exec rspec               # 542 examples
+bundle exec rspec               # 547 examples
 bundle exec rubocop             # clean
 bundle exec bin/conformance.rb  # 5/5 fixtures
-bundle exec bin/chat.rb         # interactive REPL
+bundle exec bin/harnas run examples/01-hello-world/manifest.json --input "hello"
+bundle exec bin/harnas chat examples/05-codebase-qa/manifest.json
 ```
+
+`bin/harnas` is the manifest-driven CLI:
+
+- `harnas run <manifest> --input "..."` sends one prompt, prints the
+  final assistant response, saves the Session to
+  `~/.harnas/runs/<timestamp>-<manifest_name>.jsonl`, and exits.
+- `harnas chat <manifest>` starts a minimal REPL, preserving the Log
+  across turns and saving the Session on exit.
+- Both commands accept `--provider KIND` and `--model MODEL`; provider
+  switches use the same model resolution as the examples:
+  `--model` > `<PROVIDER>_MODEL` > `config/defaults.yml`.
+- Manifest tools whose handler starts with `harnas.builtin.` are
+  resolved automatically from `Harnas::Tools::Builtin.handlers`.
 
 ## Live providers
 
