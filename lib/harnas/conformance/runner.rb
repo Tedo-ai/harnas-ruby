@@ -7,6 +7,7 @@ require "harnas/agent_loop"
 require "harnas/events/user_message"
 require "harnas/hooks"
 require "harnas/conformance/scripted_provider"
+require "harnas/conformance/scripted_stream_provider"
 
 module Harnas
   module Conformance
@@ -15,9 +16,13 @@ module Harnas
     # A fixture is a directory with these files:
     #
     #   manifest.json         — a standard spec/18 Agent Manifest
-    #   provider-script.json  — an ordered array of provider responses
-    #                           (wire-shape matching the manifest's
-    #                           provider kind)
+    #   provider-script.json  — an ordered array of buffered provider
+    #                           responses (wire-shape matching the
+    #                           manifest's provider kind)
+    #   provider-script-stream.json
+    #                         — for streaming fixtures, an ordered array
+    #                           of provider-call streams; each stream is
+    #                           an ordered array of Event-args Hashes
     #   inputs.json           — an array of user message strings
     #   expected-log.jsonl    — the Log any conformant implementation
     #                           must produce: one JSON event per line,
@@ -47,12 +52,12 @@ module Harnas
       end
 
       def self.run(dir)
-        manifest  = JSON.parse(File.read(File.join(dir, "manifest.json")))
-        responses = JSON.parse(File.read(File.join(dir, "provider-script.json")))
-        inputs    = JSON.parse(File.read(File.join(dir, "inputs.json")))
-        expected  = load_expected(File.join(dir, "expected-log.jsonl"))
+        manifest = JSON.parse(File.read(File.join(dir, "manifest.json")))
+        script, streaming = load_provider_script(dir)
+        inputs   = JSON.parse(File.read(File.join(dir, "inputs.json")))
+        expected = load_expected(File.join(dir, "expected-log.jsonl"))
 
-        actual = run_agent(manifest, responses, inputs)
+        actual = run_agent(manifest, script, inputs, streaming: streaming)
 
         diff = first_mismatch(actual, expected)
         Result.new(
@@ -64,8 +69,12 @@ module Harnas
         )
       end
 
-      def self.run_agent(manifest, responses, inputs)
-        scripted = ScriptedProvider.new(responses: responses)
+      def self.run_agent(manifest, script, inputs, streaming: false)
+        scripted = if streaming
+                     ScriptedStreamProvider.new(streams: script)
+                   else
+                     ScriptedProvider.new(responses: script)
+                   end
         loaded   = Harnas::Manifest.load(
           manifest,
           api_keys: conformance_api_keys,
@@ -75,26 +84,40 @@ module Harnas
 
         Harnas::Hooks.scoped do
           loaded.install_strategies!
-          drive_inputs(loaded, scripted, inputs)
+          drive_inputs(loaded, scripted, inputs, streaming: streaming)
         end
 
         serialize_log(loaded.session.log)
       end
 
-      def self.drive_inputs(loaded, scripted, inputs)
+      def self.load_provider_script(dir)
+        stream_path = File.join(dir, "provider-script-stream.json")
+        if File.exist?(stream_path)
+          [JSON.parse(File.read(stream_path)), true]
+        else
+          [JSON.parse(File.read(File.join(dir, "provider-script.json"))), false]
+        end
+      end
+
+      def self.drive_inputs(loaded, scripted, inputs, streaming: false)
         inputs.each do |text|
           loaded.session.log.append(
             type: :user_message,
             payload: Harnas::Events::UserMessage.new(text: text).to_h
           )
-          Harnas::AgentLoop.new(
+          loop_kwargs = {
             session: loaded.session,
             projection: loaded.projection,
             runner: loaded.runner,
-            provider: scripted,
-            ingestor: loaded.ingestor,
             max_turns: 3
-          ).run
+          }
+          if streaming
+            loop_kwargs[:stream_provider] = scripted
+          else
+            loop_kwargs[:provider] = scripted
+            loop_kwargs[:ingestor] = loaded.ingestor
+          end
+          Harnas::AgentLoop.new(**loop_kwargs).run
         end
       end
 

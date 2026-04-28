@@ -27,6 +27,9 @@ the specification as a whole.
   commands. The old `bin/chat.rb` entry point delegates to
   `bin/harnas chat`.
 - `erb` was updated to 6.0.4.
+- Agent-level conformance now includes streaming fixtures; the Ruby
+  runner replays `provider-script-stream.json` through the AgentLoop
+  streaming path.
 
 ## [0.1.0] — 2026-04-28
 
