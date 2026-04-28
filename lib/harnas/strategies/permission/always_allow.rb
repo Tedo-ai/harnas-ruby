@@ -19,13 +19,13 @@ module Harnas
       # default. Composes cleanly with other permission strategies
       # via any-deny-wins (spec/14-hooks.md R6).
       class AlwaysAllow
-        def self.install
-          new.install
+        def self.install(session = nil)
+          new.install(session&.hooks || Hooks)
         end
 
-        def install
+        def install(hooks = Hooks)
           handler = method(:on_pre_tool_use)
-          Hooks.on(:pre_tool_use, handler)
+          hooks.on(:pre_tool_use, handler)
           handler
         end
 

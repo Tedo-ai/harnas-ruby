@@ -18,8 +18,11 @@ module Harnas
       assistant_message: %i[stop_reason]
     }.freeze
 
-    def initialize
+    attr_accessor :observation
+
+    def initialize(observation: nil)
       @events = []
+      @observation = observation
     end
 
     def size
@@ -44,7 +47,7 @@ module Harnas
       id     = "evt_#{seq}_#{digest}"
       event  = Event.new(seq: seq, id: id, type: type, payload: payload)
       @events << event
-      Observation.emit(:event_appended, event: event, log_size: @events.size)
+      (@observation || Observation).emit(:event_appended, event: event, log_size: @events.size)
       event
     end
 

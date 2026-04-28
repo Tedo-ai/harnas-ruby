@@ -48,6 +48,16 @@ bundle exec bin/harnas chat examples/05-codebase-qa/manifest.json
 - Manifest tools whose handler starts with `harnas.builtin.` are
   resolved automatically from `Harnas::Tools::Builtin.handlers`.
 
+## Runtime Scope
+
+Each `Harnas::Session` owns its own hook and observation buses:
+`session.hooks` and `session.observation`. Strategies installed from a
+manifest are scoped to that Session, so multiple agents can run in the
+same process without inheriting each other's handlers or subscribers.
+
+The legacy `Harnas::Hooks.*` and `Harnas::Observation.*` APIs remain
+available as process-global compatibility wrappers for v0.3.
+
 ## Live providers
 
 Set the relevant API key in `.env` (gitignored) or the environment.

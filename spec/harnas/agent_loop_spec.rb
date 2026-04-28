@@ -173,7 +173,7 @@ RSpec.describe Harnas::AgentLoop do
     it "fires session_started / turn_started / turn_ended / session_ended in order" do
       fired = []
       %i[session_started turn_started turn_ended session_ended].each do |point|
-        Harnas::Hooks.on(point) { |**_| fired << point }
+        session.hooks.on(point) { |**_| fired << point }
       end
       loop_runner.run
       expect(fired).to eq(%i[session_started turn_started turn_ended session_ended])
@@ -182,7 +182,7 @@ RSpec.describe Harnas::AgentLoop do
     it "fires the request-path hooks (pre/post projection, pre/post provider_call)" do
       fired = []
       %i[pre_projection post_projection pre_provider_call post_provider_call].each do |point|
-        Harnas::Hooks.on(point) { |**_| fired << point }
+        session.hooks.on(point) { |**_| fired << point }
       end
       loop_runner.run
       expect(fired).to eq(%i[pre_projection post_projection pre_provider_call post_provider_call])
@@ -191,7 +191,7 @@ RSpec.describe Harnas::AgentLoop do
     it "fires pre_ingest / post_ingest bracketing the Ingestor call" do
       fired = []
       %i[pre_ingest post_ingest].each do |point|
-        Harnas::Hooks.on(point) { |**_| fired << point }
+        session.hooks.on(point) { |**_| fired << point }
       end
       loop_runner.run
       expect(fired).to eq(%i[pre_ingest post_ingest])
@@ -199,16 +199,27 @@ RSpec.describe Harnas::AgentLoop do
 
     it "passes the stop_reason in the turn_ended payload" do
       captured = nil
-      Harnas::Hooks.on(:turn_ended) { |stop_reason:, **_| captured = stop_reason }
+      session.hooks.on(:turn_ended) { |stop_reason:, **_| captured = stop_reason }
       loop_runner.run
       expect(captured).to eq(:end_turn)
     end
 
     it "passes the exit reason in the session_ended payload" do
       captured = nil
-      Harnas::Hooks.on(:session_ended) { |reason:, **_| captured = reason }
+      session.hooks.on(:session_ended) { |reason:, **_| captured = reason }
       loop_runner.run
       expect(captured).to eq(:end_turn)
+    end
+
+    it "scopes hooks to the Session running the loop" do
+      other_session = Harnas::Session.create
+      fired = []
+      session.hooks.on(:pre_projection) { |**_| fired << :current }
+      other_session.hooks.on(:pre_projection) { |**_| fired << :other }
+
+      loop_runner.run
+
+      expect(fired).to eq([:current])
     end
   end
 
@@ -261,7 +272,7 @@ RSpec.describe Harnas::AgentLoop do
     end
 
     it "denies the tool and appends a failure tool_result when a handler returns allow: false" do
-      Harnas::Hooks.on(:pre_tool_use) { |**_| { allow: false, reason: "testing" } }
+      session.hooks.on(:pre_tool_use) { |**_| { allow: false, reason: "testing" } }
       loop_runner.run
 
       tool_result = session.log.find { |e| e.type == :tool_result }
@@ -277,7 +288,7 @@ RSpec.describe Harnas::AgentLoop do
     end
 
     it "allows the tool when all handlers return allow: true" do
-      Harnas::Hooks.on(:pre_tool_use) { |**_| { allow: true } }
+      session.hooks.on(:pre_tool_use) { |**_| { allow: true } }
       loop_runner.run
 
       tool_result = session.log.find { |e| e.type == :tool_result }
@@ -285,9 +296,9 @@ RSpec.describe Harnas::AgentLoop do
     end
 
     it "denies when any handler denies (any-deny-wins)" do
-      Harnas::Hooks.on(:pre_tool_use) { |**_| { allow: true } }
-      Harnas::Hooks.on(:pre_tool_use) { |**_| { allow: false, reason: "second" } }
-      Harnas::Hooks.on(:pre_tool_use) { |**_| { allow: true } }
+      session.hooks.on(:pre_tool_use) { |**_| { allow: true } }
+      session.hooks.on(:pre_tool_use) { |**_| { allow: false, reason: "second" } }
+      session.hooks.on(:pre_tool_use) { |**_| { allow: true } }
       loop_runner.run
 
       tool_result = session.log.find { |e| e.type == :tool_result }

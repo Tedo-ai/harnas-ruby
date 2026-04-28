@@ -9,6 +9,21 @@ the specification as a whole.
 
 ## [Unreleased]
 
+### Reference implementation (Ruby)
+
+#### Changed
+
+- `Harnas::Hooks` and `Harnas::Observation` are now instantiable
+  Session-scoped buses. Each `Harnas::Session` owns `#hooks` and
+  `#observation`, and `AgentLoop` invokes hooks through the active
+  Session instead of the process-global registry.
+- Manifest strategy installation now installs onto the Loaded
+  Session. `session.install(StrategyClass, **config)` is the
+  preferred strategy-install surface.
+- The old `Harnas::Hooks.*` and `Harnas::Observation.*` module-style
+  calls remain as backward-compatible wrappers around a process-global
+  default instance for v0.3.
+
 ## [0.2.0] — 2026-04-28
 
 ### Reference implementation (Ruby)

@@ -23,9 +23,9 @@ RSpec.describe "Observation integration" do
   describe "a full smoke session" do
     it "emits the expected event sequence end-to-end (Anthropic mock)" do
       collector = nil
-      Harnas::Observation.subscribed do |c|
+      session = Harnas::Session.create(metadata: { provider: :anthropic })
+      session.observation.subscribed do |c|
         collector = c
-        session = Harnas::Session.create(metadata: { provider: :anthropic })
         session.log.append(
           type: :user_message,
           payload: Harnas::Events::UserMessage.new(text: "say hello in one word").to_h
@@ -35,8 +35,10 @@ RSpec.describe "Observation integration" do
         provider   = Harnas::Providers::Mock.new(fixture_path: fixture_dir(:anthropic))
         ingestor   = Harnas::Ingestors::Anthropic.new
 
-        response = provider.call(projection.call(session.log))
-        ingestor.call(response).each { |e| session.log.append(**e) }
+        Harnas::Observation.with_current(session.observation) do
+          response = provider.call(projection.call(session.log))
+          ingestor.call(response).each { |e| session.log.append(**e) }
+        end
       end
 
       types = collector.events.map(&:first)
@@ -154,6 +156,21 @@ RSpec.describe "Observation integration" do
     end
   end
 
+  describe "Session-scoped subscribers" do
+    it "receives Log emissions only for the owning Session" do
+      first = Harnas::Session.create
+      second = Harnas::Session.create
+      collector = Harnas::Observation::Collector.new
+      first.observation.subscribe(collector)
+
+      first.log.append(type: :user_message, payload: { text: "first" })
+      second.log.append(type: :user_message, payload: { text: "second" })
+
+      texts = collector.of(:event_appended).map { |(_, p)| p[:event].payload[:text] }
+      expect(texts).to eq(["first"])
+    end
+  end
+
   def run_mock_session(provider_key)
     projections = {
       anthropic: -> { Harnas::Projections::Anthropic.new(model: "claude-sonnet-4-5") },
@@ -166,11 +183,10 @@ RSpec.describe "Observation integration" do
       gemini: Harnas::Ingestors::Gemini
     }
 
-    Harnas::Observation.reset!
     collector = Harnas::Observation::Collector.new
-    Harnas::Observation.subscribe(collector)
 
     session = Harnas::Session.create(metadata: { provider: provider_key })
+    session.observation.subscribe(collector)
     session.log.append(
       type: :user_message,
       payload: Harnas::Events::UserMessage.new(text: "say hello in one word").to_h
@@ -180,8 +196,10 @@ RSpec.describe "Observation integration" do
     provider   = Harnas::Providers::Mock.new(fixture_path: fixture_dir(provider_key))
     ingestor   = ingestors.fetch(provider_key).new
 
-    response = provider.call(projection.call(session.log))
-    ingestor.call(response).each { |e| session.log.append(**e) }
+    Harnas::Observation.with_current(session.observation) do
+      response = provider.call(projection.call(session.log))
+      ingestor.call(response).each { |e| session.log.append(**e) }
+    end
 
     collector
   end

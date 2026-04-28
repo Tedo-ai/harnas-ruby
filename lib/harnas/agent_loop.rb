@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "harnas/hooks"
+require "harnas/observation"
 require "harnas/events/provider_error"
 require "harnas/events/tool_result"
 require "harnas/providers/retry_policy"
@@ -32,40 +33,42 @@ module Harnas
     end
 
     def run
-      Hooks.invoke(:session_started, session: @session)
-      reason = :max_turns_reached
+      Observation.with_current(@session.observation) do
+        @session.hooks.invoke(:session_started, session: @session)
+        reason = :max_turns_reached
 
-      @max_turns.times do |turn|
-        stop_reason = run_turn(turn)
+        @max_turns.times do |turn|
+          stop_reason = run_turn(turn)
 
-        if stop_reason == :provider_failed
-          reason = :provider_failed
-          break
+          if stop_reason == :provider_failed
+            reason = :provider_failed
+            break
+          end
+
+          if stop_reason != :tool_use
+            reason = :end_turn
+            break
+          end
+
+          if dispatch_pending_tools.empty?
+            reason = :no_pending_tools
+            break
+          end
         end
 
-        if stop_reason != :tool_use
-          reason = :end_turn
-          break
-        end
-
-        if dispatch_pending_tools.empty?
-          reason = :no_pending_tools
-          break
-        end
+        @session.hooks.invoke(:session_ended, session: @session, reason: reason)
+        reason
       end
-
-      Hooks.invoke(:session_ended, session: @session, reason: reason)
-      reason
     end
 
     private
 
     def run_turn(turn)
-      Hooks.invoke(:turn_started, session: @session, turn: turn)
+      @session.hooks.invoke(:turn_started, session: @session, turn: turn)
 
-      Hooks.invoke(:pre_projection, session: @session)
+      @session.hooks.invoke(:pre_projection, session: @session)
       request = @projection.call(@session.log)
-      Hooks.invoke(:post_projection, session: @session, request: request)
+      @session.hooks.invoke(:post_projection, session: @session, request: request)
 
       ok = call_provider_with_retry(request)
       return :provider_failed unless ok
@@ -73,7 +76,7 @@ module Harnas
       last_assistant = @session.log.reverse_each.find { |e| e.type == :assistant_message }
       stop_reason    = last_assistant.payload[:stop_reason]
 
-      Hooks.invoke(:turn_ended, session: @session, turn: turn, stop_reason: stop_reason)
+      @session.hooks.invoke(:turn_ended, session: @session, turn: turn, stop_reason: stop_reason)
       stop_reason
     end
 
@@ -111,20 +114,20 @@ module Harnas
     end
 
     def run_buffered_turn(request)
-      Hooks.invoke(:pre_provider_call, session: @session, request: request)
+      @session.hooks.invoke(:pre_provider_call, session: @session, request: request)
       response = @provider.call(request)
-      Hooks.invoke(:post_provider_call, session: @session, response: response)
+      @session.hooks.invoke(:post_provider_call, session: @session, response: response)
 
-      Hooks.invoke(:pre_ingest, session: @session, response: response)
+      @session.hooks.invoke(:pre_ingest, session: @session, response: response)
       events = @ingestor.call(response)
       events.each { |e| @session.log.append(**e) }
-      Hooks.invoke(:post_ingest, session: @session, events: events)
+      @session.hooks.invoke(:post_ingest, session: @session, events: events)
     end
 
     def run_streaming_turn(request)
-      Hooks.invoke(:pre_provider_call, session: @session, request: request)
+      @session.hooks.invoke(:pre_provider_call, session: @session, request: request)
       @stream_provider.call(request) { |event| @session.log.append(**event) }
-      Hooks.invoke(:post_provider_call, session: @session, response: nil)
+      @session.hooks.invoke(:post_provider_call, session: @session, response: nil)
     end
 
     def append_provider_error(error, attempt:, terminal:)
@@ -160,7 +163,8 @@ module Harnas
     end
 
     def dispatch_one_tool(tool_use_event)
-      decisions = Hooks.invoke(:pre_tool_use, session: @session, tool_use: tool_use_event)
+      decisions = @session.hooks.invoke(:pre_tool_use, session: @session,
+                                                       tool_use: tool_use_event)
       denied    = decisions.find { |d| d.is_a?(Hash) && d[:allow] == false }
 
       if denied
@@ -169,7 +173,7 @@ module Harnas
         @runner&.run(tool_use_event, into_log: @session.log)
       end
 
-      Hooks.invoke(
+      @session.hooks.invoke(
         :post_tool_use,
         session: @session,
         tool_use: tool_use_event,

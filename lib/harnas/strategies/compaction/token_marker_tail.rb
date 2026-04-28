@@ -29,12 +29,12 @@ module Harnas
         DEFAULT_SUMMARY_FORMAT =
           "[compacted $N earlier messages (~$E tokens -> threshold $T)]"
 
-        def self.install(max_tokens: 100_000, threshold: 0.85, keep_recent: 10,
+        def self.install(session = nil, max_tokens: 100_000, threshold: 0.85, keep_recent: 10,
                          summary_format: DEFAULT_SUMMARY_FORMAT)
           new(
             max_tokens: max_tokens, threshold: threshold,
             keep_recent: keep_recent, summary_format: summary_format
-          ).install
+          ).install(session&.hooks || Hooks)
         end
 
         def initialize(max_tokens:, threshold:, keep_recent:,
@@ -54,9 +54,9 @@ module Harnas
           @summary_format = summary_format
         end
 
-        def install
+        def install(hooks = Hooks)
           handler = method(:on_pre_projection)
-          Hooks.on(:pre_projection, handler)
+          hooks.on(:pre_projection, handler)
           handler
         end
 

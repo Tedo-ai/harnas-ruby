@@ -28,12 +28,12 @@ module Harnas
         # "$N" is substituted with the decimal count of compacted events.
         DEFAULT_SUMMARY_FORMAT = "[snipped $N earlier messages]"
 
-        def self.install(max_messages: 20, keep_recent: 10,
+        def self.install(session = nil, max_messages: 20, keep_recent: 10,
                          summary_format: DEFAULT_SUMMARY_FORMAT)
           new(
             max_messages: max_messages, keep_recent: keep_recent,
             summary_format: summary_format
-          ).install
+          ).install(session&.hooks || Hooks)
         end
 
         def initialize(max_messages:, keep_recent:, summary_format: DEFAULT_SUMMARY_FORMAT)
@@ -48,9 +48,9 @@ module Harnas
           @summary_format = summary_format
         end
 
-        def install
+        def install(hooks = Hooks)
           handler = method(:on_pre_projection)
-          Hooks.on(:pre_projection, handler)
+          hooks.on(:pre_projection, handler)
           handler
         end
 

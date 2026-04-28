@@ -27,24 +27,25 @@ SCENARIOS_DIR = File.expand_path("../../spec/conformance/scenarios", __dir__)
 STRATEGY_PACK = [
   {
     name: "no-compaction",
-    install: -> {}
+    install: ->(_session) {}
   },
   {
     name: "marker-tail-max6-keep3",
-    install: lambda {
-      Harnas::Strategies::Compaction::MarkerTail.install(max_messages: 6, keep_recent: 3)
+    install: lambda { |session|
+      Harnas::Strategies::Compaction::MarkerTail.install(session, max_messages: 6, keep_recent: 3)
     }
   },
   {
     name: "marker-tail-max4-keep2",
-    install: lambda {
-      Harnas::Strategies::Compaction::MarkerTail.install(max_messages: 4, keep_recent: 2)
+    install: lambda { |session|
+      Harnas::Strategies::Compaction::MarkerTail.install(session, max_messages: 4, keep_recent: 2)
     }
   },
   {
     name: "token-marker-tail-1000@50%",
-    install: lambda {
+    install: lambda { |session|
       Harnas::Strategies::Compaction::TokenMarkerTail.install(
+        session,
         max_tokens: 1000, threshold: 0.5, keep_recent: 3
       )
     }

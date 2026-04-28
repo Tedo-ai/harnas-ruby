@@ -41,8 +41,9 @@ RSpec.describe Harnas::Benchmark::Runner do
       result = runner.run(
         scenario: long_scenario,
         strategy_name: "marker-tail-5",
-        install_strategy: lambda {
-          Harnas::Strategies::Compaction::MarkerTail.install(max_messages: 5, keep_recent: 2)
+        install_strategy: lambda { |session|
+          Harnas::Strategies::Compaction::MarkerTail.install(session, max_messages: 5,
+                                                                      keep_recent: 2)
         }
       )
       expect(result.compactions).to be > 0
@@ -52,8 +53,9 @@ RSpec.describe Harnas::Benchmark::Runner do
       result = runner.run(
         scenario: long_scenario,
         strategy_name: "marker-tail-5",
-        install_strategy: lambda {
-          Harnas::Strategies::Compaction::MarkerTail.install(max_messages: 5, keep_recent: 2)
+        install_strategy: lambda { |session|
+          Harnas::Strategies::Compaction::MarkerTail.install(session, max_messages: 5,
+                                                                      keep_recent: 2)
         }
       )
       expect(result.strategy_name).to eq("marker-tail-5")
@@ -68,8 +70,9 @@ RSpec.describe Harnas::Benchmark::Runner do
       marker_tail = runner2.run(
         scenario: long_scenario,
         strategy_name: "marker-tail-4",
-        install_strategy: lambda {
-          Harnas::Strategies::Compaction::MarkerTail.install(max_messages: 4, keep_recent: 2)
+        install_strategy: lambda { |session|
+          Harnas::Strategies::Compaction::MarkerTail.install(session, max_messages: 4,
+                                                                      keep_recent: 2)
         }
       )
 

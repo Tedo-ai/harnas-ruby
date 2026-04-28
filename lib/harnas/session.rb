@@ -2,7 +2,9 @@
 
 require "json"
 require "securerandom"
+require "harnas/hooks"
 require "harnas/log"
+require "harnas/observation"
 
 module Harnas
   # JSONL marker for the one-line session header that precedes
@@ -15,19 +17,40 @@ module Harnas
   # The Session itself is a frozen value object, but the Log it owns is
   # mutable: `session.log.append(...)` continues to work after the
   # Session has been constructed.
-  Session = Data.define(:id, :log, :metadata) do
-    def initialize(id:, log: Log.new, metadata: {})
+  Session = Data.define(:id, :log, :metadata, :hooks, :observation) do
+    def initialize(id:, log: nil, metadata: {}, hooks: nil, observation: nil)
       raise ArgumentError, "id must be a String"        unless id.is_a?(String)
       raise ArgumentError, "id must not be empty"       if id.empty?
-      raise ArgumentError, "log must be a Harnas::Log"  unless log.is_a?(Log)
       raise ArgumentError, "metadata must be a Hash"    unless metadata.is_a?(Hash)
+
+      observation ||= Observation.new
+      hooks       ||= Hooks.new
+      log         ||= Log.new(observation: observation)
+
+      raise ArgumentError, "log must be a Harnas::Log" unless log.is_a?(Log)
+      raise ArgumentError, "hooks must be a Harnas::Hooks" unless hooks.is_a?(Hooks)
+      raise ArgumentError, "observation must be a Harnas::Observation" \
+        unless observation.is_a?(Observation)
+
+      log.observation ||= observation
 
       super
     end
 
     # Convenience constructor: generates a UUID-suffixed id and a fresh Log.
     def self.create(metadata: {})
-      new(id: "ses_#{SecureRandom.uuid}", log: Log.new, metadata: metadata)
+      new(id: "ses_#{SecureRandom.uuid}", metadata: metadata)
+    end
+
+    def install(strategy, **config)
+      strategy.install(self, **config)
+    end
+
+    def ==(other)
+      other.is_a?(self.class) &&
+        id == other.id &&
+        log.equal?(other.log) &&
+        metadata == other.metadata
     end
 
     # Persist the Session as a JSONL file: one header line carrying

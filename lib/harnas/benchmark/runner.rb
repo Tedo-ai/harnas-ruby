@@ -16,8 +16,8 @@ module Harnas
     # during the run.
     #
     # The Runner is deliberately single-threaded and synchronous:
-    # each (scenario × strategy) cell runs in isolation, Observation
-    # is reset between runs, Hooks are scoped per run. This keeps
+    # each (scenario × strategy) cell runs with a fresh Session and
+    # Session-scoped hooks/observation. This keeps
     # results reproducible and comparable.
     class Runner
       Result = Data.define(
@@ -34,24 +34,21 @@ module Harnas
         @ingestor   = ingestor
       end
 
-      def run(scenario:, strategy_name:, install_strategy: -> {})
+      def run(scenario:, strategy_name:, install_strategy: ->(_session) {})
         collector = Observation::Collector.new
-        result    = nil
+        nil
 
-        Observation.reset!
-        Harnas::Hooks.scoped do
-          Observation.subscribe(collector)
-          install_strategy.call
+        session = Session.create
+        session.observation.subscribe(collector)
+        install_strategy.call(session)
 
-          session = Session.create
-          drive_scenario(scenario, session)
+        drive_scenario(scenario, session)
 
-          result = build_result(scenario, strategy_name, collector)
-        end
+        result = build_result(scenario, strategy_name, collector)
 
         result
       ensure
-        Observation.reset!
+        session&.observation&.reset!
       end
 
       private

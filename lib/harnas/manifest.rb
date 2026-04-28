@@ -18,7 +18,7 @@ module Harnas
   # tool Registry, and a list of strategies ready to install.
   #
   # Loading is side-effect-free per R7 of spec/18-agent-manifest.md:
-  # no hooks are registered, no network calls are made, no global
+  # no hooks are registered, no network calls are made, no process-global
   # state is touched. The returned Loaded object exposes
   # #install_strategies! to perform the install step explicitly.
   module Manifest
@@ -103,11 +103,11 @@ module Harnas
         @strategies = strategies
       end
 
-      # Install every manifest-declared strategy onto Harnas::Hooks.
+      # Install every manifest-declared strategy onto this Loaded Session.
       # Returns the array of handler objects in install order (so they
-      # can be removed individually via Harnas::Hooks.off).
+      # can be removed individually via session.hooks.off).
       def install_strategies!
-        @strategies.map(&:install)
+        @strategies.map { |strategy| strategy.install(@session) }
       end
 
       # Convenience: build a runner + AgentLoop with the bundle's parts.
@@ -127,8 +127,8 @@ module Harnas
         @config = config
       end
 
-      def install
-        @klass.install(**@config)
+      def install(session)
+        session.install(@klass, **@config)
       end
     end
 

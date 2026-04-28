@@ -27,8 +27,8 @@ module Harnas
         # Normative default per spec/strategies/permission/human-approval.md.
         DEFAULT_DENIAL_REASON = "human declined"
 
-        def self.install(prompt:, denial_reason: DEFAULT_DENIAL_REASON)
-          new(prompt: prompt, denial_reason: denial_reason).install
+        def self.install(session = nil, prompt:, denial_reason: DEFAULT_DENIAL_REASON)
+          new(prompt: prompt, denial_reason: denial_reason).install(session&.hooks || Hooks)
         end
 
         def initialize(prompt:, denial_reason: DEFAULT_DENIAL_REASON)
@@ -41,9 +41,9 @@ module Harnas
           @denial_reason  = denial_reason
         end
 
-        def install
+        def install(hooks = Hooks)
           handler = method(:on_pre_tool_use)
-          Hooks.on(:pre_tool_use, handler)
+          hooks.on(:pre_tool_use, handler)
           handler
         end
 

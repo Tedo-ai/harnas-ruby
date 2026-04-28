@@ -25,8 +25,8 @@ module Harnas
         # wrapped in quotes).
         DEFAULT_REASON_FORMAT = "tool $NAME is on the deny-list"
 
-        def self.install(names:, reason_format: DEFAULT_REASON_FORMAT)
-          new(names: names, reason_format: reason_format).install
+        def self.install(session = nil, names:, reason_format: DEFAULT_REASON_FORMAT)
+          new(names: names, reason_format: reason_format).install(session&.hooks || Hooks)
         end
 
         def initialize(names:, reason_format: DEFAULT_REASON_FORMAT)
@@ -39,9 +39,9 @@ module Harnas
           @reason_format  = reason_format
         end
 
-        def install
+        def install(hooks = Hooks)
           handler = method(:on_pre_tool_use)
-          Hooks.on(:pre_tool_use, handler)
+          hooks.on(:pre_tool_use, handler)
           handler
         end
 

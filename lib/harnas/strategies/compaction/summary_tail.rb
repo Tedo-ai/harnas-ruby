@@ -35,12 +35,12 @@ module Harnas
           summary text, no preamble.
         PROMPT
 
-        def self.install(projection:, provider:, ingestor:,
+        def self.install(session = nil, projection:, provider:, ingestor:,
                          max_messages: 20, keep_recent: 10, prompt: DEFAULT_PROMPT)
           new(
             projection: projection, provider: provider, ingestor: ingestor,
             max_messages: max_messages, keep_recent: keep_recent, prompt: prompt
-          ).install
+          ).install(session&.hooks || Hooks)
         end
 
         def initialize(projection:, provider:, ingestor:,
@@ -63,9 +63,9 @@ module Harnas
           @prompt       = prompt
         end
 
-        def install
+        def install(hooks = Hooks)
           handler = method(:on_pre_projection)
-          Hooks.on(:pre_projection, handler)
+          hooks.on(:pre_projection, handler)
           handler
         end
 

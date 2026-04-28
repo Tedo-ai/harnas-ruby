@@ -377,7 +377,7 @@ def current_config_introspection
     tools: SHARED_REGISTRY.tools.map do |tool|
       { name: tool.name, description: tool.description }
     end,
-    hooks: Harnas::Hooks.handlers.each_with_object({}) do |(hook, handlers), h|
+    hooks: SHARED_SESSION.hooks.handlers.each_with_object({}) do |(hook, handlers), h|
       h[hook.to_s] = handlers.size
     end,
     strategies_installed: INSTALLED_STRATEGY_NAMES.dup,
@@ -400,7 +400,8 @@ end
 INSTALLED_STRATEGY_NAMES = [] # rubocop:disable Style/MutableConstant -- populated by install_default_strategies!
 
 def install_default_strategies!
-  Harnas::Strategies::Compaction::MarkerTail.install(max_messages: 12, keep_recent: 6)
+  Harnas::Strategies::Compaction::MarkerTail.install(SHARED_SESSION, max_messages: 12,
+                                                                     keep_recent: 6)
   INSTALLED_STRATEGY_NAMES << "Compaction::MarkerTail(max_messages=12, keep_recent=6)"
 end
 

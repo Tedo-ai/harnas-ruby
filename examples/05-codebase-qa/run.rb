@@ -88,7 +88,7 @@ puts "---"
 
 # Stash the most recent provider request so we can print it on failure.
 last_request = nil
-Harnas::Observation.subscribe(
+agent.session.observation.subscribe(
   ->(ev, payload) { last_request = payload[:request] if ev == :provider_called }
 )
 

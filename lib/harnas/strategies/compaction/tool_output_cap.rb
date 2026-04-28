@@ -43,14 +43,14 @@ module Harnas
           "[tool `$TOOL` output capped at $CAP bytes " \
           "(original $ORIGINAL bytes)]\n$PREFIX"
 
-        def self.install(max_bytes: DEFAULT_MAX_BYTES,
+        def self.install(session = nil, max_bytes: DEFAULT_MAX_BYTES,
                          prefix_bytes: DEFAULT_PREFIX_BYTES,
                          summary_format: DEFAULT_SUMMARY_FORMAT)
           new(
             max_bytes: max_bytes,
             prefix_bytes: prefix_bytes,
             summary_format: summary_format
-          ).install
+          ).install(session&.hooks || Hooks)
         end
 
         def initialize(max_bytes:, prefix_bytes:, summary_format:)
@@ -66,9 +66,9 @@ module Harnas
           @summary_format = summary_format
         end
 
-        def install
+        def install(hooks = Hooks)
           handler = method(:on_pre_projection)
-          Hooks.on(:pre_projection, handler)
+          hooks.on(:pre_projection, handler)
           handler
         end
 

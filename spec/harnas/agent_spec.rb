@@ -84,17 +84,16 @@ RSpec.describe Harnas::Agent do
         ]
       )
 
-      Harnas::Hooks.scoped do
-        before = Harnas::Hooks.handlers[:pre_projection].size
-        agent = build_agent(%w[a b], manifest: manifest_with_strategy)
+      agent = build_agent(%w[a b], manifest: manifest_with_strategy)
+      before = agent.session.hooks.handlers[:pre_projection].size
 
-        agent.chat("hi")
-        after_first = Harnas::Hooks.handlers[:pre_projection].size
-        expect(after_first - before).to eq(1)
+      agent.chat("hi")
+      after_first = agent.session.hooks.handlers[:pre_projection].size
+      expect(after_first - before).to eq(1)
 
-        agent.chat("hi again")
-        expect(Harnas::Hooks.handlers[:pre_projection].size).to eq(after_first)
-      end
+      agent.chat("hi again")
+      expect(agent.session.hooks.handlers[:pre_projection].size).to eq(after_first)
+      expect(Harnas::Hooks.handlers[:pre_projection]).to be_empty
     end
   end
 

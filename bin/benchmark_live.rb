@@ -48,18 +48,19 @@ ingestor   = Harnas::Ingestors::Anthropic.new
 STRATEGY_PACK = [
   {
     name: "no-compaction",
-    install: -> {}
+    install: ->(_session) {}
   },
   {
     name: "marker-tail-max6-keep3",
-    install: lambda {
-      Harnas::Strategies::Compaction::MarkerTail.install(max_messages: 6, keep_recent: 3)
+    install: lambda { |session|
+      Harnas::Strategies::Compaction::MarkerTail.install(session, max_messages: 6, keep_recent: 3)
     }
   },
   {
     name: "summary-tail-max6-keep3",
-    install: lambda {
+    install: lambda { |session|
       Harnas::Strategies::Compaction::SummaryTail.install(
+        session,
         projection: Harnas::Projections::Anthropic.new(model: model),
         provider: Harnas::Providers::Anthropic.new(api_key: api_key, api_version: api_ver),
         ingestor: Harnas::Ingestors::Anthropic.new,

@@ -240,13 +240,12 @@ RSpec.describe Harnas::Manifest do
         ]
       )
 
-      Harnas::Hooks.scoped do
-        loaded = described_class.load(manifest)
-        expect(Harnas::Hooks.handlers[:pre_tool_use]).to be_empty
+      loaded = described_class.load(manifest)
+      expect(loaded.session.hooks.handlers[:pre_tool_use]).to be_empty
 
-        loaded.install_strategies!
-        expect(Harnas::Hooks.handlers[:pre_tool_use]).not_to be_empty
-      end
+      loaded.install_strategies!
+      expect(loaded.session.hooks.handlers[:pre_tool_use]).not_to be_empty
+      expect(Harnas::Hooks.handlers[:pre_tool_use]).to be_empty
     end
   end
 

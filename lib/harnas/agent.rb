@@ -15,16 +15,14 @@ module Harnas
   #   agent.chat("and again")       # the Log is preserved across calls
   #   agent.log                     # full append-only event log
   #
-  # The façade wraps Manifest.load + AgentLoop + Hooks.scoped for the
+  # The façade wraps Manifest.load + AgentLoop for the
   # common case of "build a runnable agent from a manifest file." It
   # deliberately does not expose every primitive; users who need the
   # Projection, Ingestor, or hooks reach for Manifest.load directly.
   #
-  # Strategies declared in the manifest are installed on #chat (first
-  # call) and kept installed for the lifetime of the Agent. Calling
-  # #shutdown removes them. Nesting Agents is supported via
-  # Harnas::Hooks.scoped, but two Agents sharing a process without
-  # scoping will share the global Hooks registry.
+  # Strategies declared in the manifest are installed onto the Agent's
+  # Session on #chat (first call) and kept installed for the lifetime
+  # of the Agent. Calling #shutdown removes them.
   class Agent
     Response = Data.define(:text, :stop_reason, :usage, :log)
 
@@ -113,7 +111,7 @@ module Harnas
       return if @installed_handlers.nil?
 
       @installed_handlers.each do |handler|
-        Harnas::Hooks.handlers.each_value { |list| list.delete(handler) }
+        @loaded.session.hooks.handlers.each_value { |list| list.delete(handler) }
       end
       @installed_handlers = nil
     end
