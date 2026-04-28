@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harnas · manifest author</title>
+<style>
+  :root {
+    --bg:        #fafaf7;
+    --panel:     #ffffff;
+    --panel-2:   #f4f3ee;
+    --border:    #e6e4dc;
+    --text:      #2c2c2c;
+    --muted:     #8b8b85;
+    --accent:    #4a6da3;
+    --user:      #4a6da3;
+    --tool-use:  #a36b3a;
+    --asst:      #8a6d3b;
+    --error:     #b04a3a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    height: 100%; margin: 0;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 13.5px; line-height: 1.55;
+  }
+  header {
+    padding: 12px 22px; border-bottom: 1px solid var(--border);
+    display: flex; gap: 16px; align-items: baseline; background: var(--panel);
+  }
+  header .title { font-weight: 600; font-size: 15px; }
+  header .meta  { color: var(--muted); font-size: 13px; }
+  header a { color: var(--accent); text-decoration: none; margin-left: 8px; }
+
+  .toolbar {
+    padding: 10px 22px; display: flex; gap: 10px; align-items: center;
+    border-bottom: 1px solid var(--border); background: var(--panel-2);
+    font-size: 12.5px;
+  }
+  .toolbar select, .toolbar button {
+    padding: 4px 10px; font-size: 12.5px; font-family: inherit;
+    border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text);
+  }
+  .toolbar button { cursor: pointer; }
+  .toolbar button.primary { background: var(--text); color: var(--bg); border-color: var(--text); }
+  .toolbar .msg { color: var(--muted); }
+  .toolbar .msg.error { color: var(--error); }
+
+  main {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    height: calc(100vh - 52px - 49px);
+  }
+  main > section {
+    overflow: auto; padding: 18px 22px; border-right: 1px solid var(--border);
+  }
+  main > section:last-child { border-right: none; }
+  main h2 {
+    margin: 0 0 10px 0; font-size: 11.5px; font-weight: 600;
+    color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;
+  }
+
+  /* Table view */
+  .table-field { display: grid; grid-template-columns: 130px 1fr; gap: 8px; margin-bottom: 6px; }
+  .table-field .lbl { color: var(--muted); }
+  .table-field .val { color: var(--text); font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; word-break: break-all; }
+  .subsection { margin-top: 14px; }
+  .subsection-title { font-size: 11px; color: var(--muted); letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 6px; }
+  .row {
+    padding: 8px 10px; background: var(--panel-2);
+    border-left: 3px solid var(--border); margin-bottom: 6px; border-radius: 0 4px 4px 0;
+  }
+  .row.tool    { border-left-color: var(--tool-use); }
+  .row.strategy { border-left-color: var(--asst); }
+  .row .name { font-weight: 500; font-family: ui-monospace, Menlo, monospace; }
+  .row .sub  { color: var(--muted); font-size: 12px; }
+  .row pre {
+    margin: 4px 0 0 0; padding: 6px 8px; background: var(--bg);
+    border-radius: 3px; font-size: 11.5px; color: #555;
+    font-family: ui-monospace, Menlo, monospace;
+    white-space: pre-wrap; word-break: break-all;
+  }
+
+  /* Flow view */
+  #flow { width: 100%; height: 100%; }
+  .flow-caption { color: var(--muted); font-size: 11.5px; margin-top: 10px; line-height: 1.6; }
+
+  /* JSON view */
+  #json {
+    width: 100%; min-height: 400px; font-family: ui-monospace, Menlo, monospace;
+    font-size: 12.5px; line-height: 1.5; padding: 10px; border: 1px solid var(--border);
+    border-radius: 4px; background: var(--panel); color: var(--text); resize: vertical;
+  }
+  #json:focus { outline: none; border-color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <div class="title">harnas</div>
+  <div class="meta">manifest author · <a href="/">inspector →</a></div>
+</header>
+
+<div class="toolbar">
+  <label class="msg">example:</label>
+  <select id="examples">
+    <option value="research_agent.json">research_agent.json</option>
+    <option value="minimal_agent.json">minimal_agent.json</option>
+  </select>
+  <button id="load">load</button>
+  <button id="download" class="primary">download manifest.json</button>
+  <span class="msg" id="status"></span>
+</div>
+
+<main>
+  <section>
+    <h2>table · structured view</h2>
+    <div id="table"></div>
+  </section>
+
+  <section>
+    <h2>flow · fixed agent-loop topology</h2>
+    <svg id="flow" viewBox="0 0 380 620" preserveAspectRatio="xMidYMid meet"></svg>
+    <div class="flow-caption">
+      The Harnas AgentLoop is a fixed topology, not a DAG. Strategies
+      stack inside the slots this manifest populates; hooks run at the
+      transitions between stages. The only non-configurable node is
+      <code>llm_call</code> — the actual Provider HTTPS call.
+    </div>
+  </section>
+
+  <section>
+    <h2>json · raw manifest</h2>
+    <textarea id="json" spellcheck="false"></textarea>
+  </section>
+</main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+
+  const state = {
+    manifest: null
+  };
+
+  const STATUS = $("status");
+  function status(msg, cls) {
+    STATUS.className = "msg " + (cls || "");
+    STATUS.textContent = msg || "";
+  }
+
+  $("load").addEventListener("click", loadSelected);
+  $("download").addEventListener("click", downloadManifest);
+  $("json").addEventListener("input", onJsonEdited);
+
+  loadSelected();
+
+  function loadSelected() {
+    const name = $("examples").value;
+    fetch("/examples/" + name)
+      .then(r => r.ok ? r.text() : Promise.reject(r.statusText))
+      .then(text => {
+        $("json").value = text;
+        parseAndRender(text);
+        status("loaded " + name);
+      })
+      .catch(err => status("load failed: " + err, "error"));
+  }
+
+  function onJsonEdited() {
+    parseAndRender($("json").value);
+  }
+
+  function parseAndRender(text) {
+    let m;
+    try {
+      m = JSON.parse(text);
+    } catch (e) {
+      status("invalid JSON: " + e.message, "error");
+      return;
+    }
+    status("");
+    state.manifest = m;
+    renderTable(m);
+    renderFlow(m);
+  }
+
+  function downloadManifest() {
+    const text = $("json").value;
+    const blob = new Blob([text], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = (state.manifest && state.manifest.name ? state.manifest.name : "manifest") + ".json";
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function renderTable(m) {
+    const root = $("table");
+    root.innerHTML = "";
+
+    appendField(root, "name", m.name);
+    appendField(root, "harnas_version", m.harnas_version);
+
+    if (m.provider) {
+      section(root, "provider");
+      appendField(root, "kind",       m.provider.kind);
+      appendField(root, "model",      m.provider.model);
+      appendField(root, "max_tokens", m.provider.max_tokens);
+    }
+
+    if (m.tools && m.tools.length) {
+      section(root, "tools · " + m.tools.length);
+      m.tools.forEach(t => {
+        const el = document.createElement("div");
+        el.className = "row tool";
+        el.innerHTML =
+          '<div class="name"></div>' +
+          '<div class="sub"></div>' +
+          '<pre></pre>';
+        el.querySelector(".name").textContent = t.name;
+        el.querySelector(".sub").textContent  = t.handler + " · " + (t.description || "");
+        el.querySelector("pre").textContent   = JSON.stringify(t.input_schema, null, 2);
+        root.appendChild(el);
+      });
+    }
+
+    if (m.strategies && m.strategies.length) {
+      section(root, "strategies · " + m.strategies.length);
+      m.strategies.forEach(s => {
+        const el = document.createElement("div");
+        el.className = "row strategy";
+        el.innerHTML =
+          '<div class="name"></div>' +
+          '<pre></pre>';
+        el.querySelector(".name").textContent = s.name;
+        el.querySelector("pre").textContent   = JSON.stringify(s.config || {}, null, 2);
+        root.appendChild(el);
+      });
+    }
+  }
+
+  function appendField(root, lbl, val) {
+    const el = document.createElement("div");
+    el.className = "table-field";
+    el.innerHTML = '<div class="lbl"></div><div class="val"></div>';
+    el.querySelector(".lbl").textContent = lbl;
+    el.querySelector(".val").textContent = val == null ? "" : String(val);
+    root.appendChild(el);
+  }
+
+  function section(root, title) {
+    const el = document.createElement("div");
+    el.className = "subsection-title";
+    el.textContent = title;
+    const wrap = document.createElement("div");
+    wrap.className = "subsection";
+    wrap.appendChild(el);
+    root.appendChild(wrap);
+  }
+
+  // ── Flow view ─────────────────────────────────────────────────────
+  // The fixed AgentLoop topology. Strategy rows populate slots at the
+  // transitions; tool list populates the dispatch node. Nothing about
+  // this graph is user-configurable — strategies plug INTO slots on
+  // the skeleton, not vertices on a DAG the user draws.
+  function renderFlow(m) {
+    const svg = $("flow");
+    svg.innerHTML = "";
+    const prov     = (m.provider || {}).kind || "provider";
+    const provLine = [prov, m.provider && m.provider.model].filter(Boolean).join(" · ");
+
+    const preProj    = (m.strategies || []).filter(s => preProjStrategy(s.name));
+    const preToolUse = (m.strategies || []).filter(s => preToolUseStrategy(s.name));
+
+    const nodes = [
+      { y: 20,  label: "session.log",              sub: "the append-only substrate", kind: "substrate" },
+      { y: 95,  label: "compile (pre_projection)", sub: sumStrategies(preProj) || "(no strategies on this hook)", kind: "slot" },
+      { y: 180, label: "projection",               sub: prov + " wire shape", kind: "stage" },
+      { y: 255, label: "llm_call",                 sub: provLine, kind: "irreducible" },
+      { y: 340, label: "ingestor",                 sub: prov + " → canonical events", kind: "stage" },
+      { y: 415, label: "dispatch (pre_tool_use)",  sub: (m.tools || []).map(t => t.name).join(", ") || "(no tools)", kind: "dispatch", hookSub: sumStrategies(preToolUse) },
+      { y: 500, label: "loop or stop",             sub: "turn_ended", kind: "stage" }
+    ];
+
+    nodes.forEach(n => {
+      svg.appendChild(rect(20, n.y, 340, 55, n));
+      svg.appendChild(labelText(30, n.y + 22, n.label, "node-label"));
+      svg.appendChild(labelText(30, n.y + 42, n.sub, "node-sub"));
+      if (n.hookSub) {
+        svg.appendChild(labelText(30, n.y + 56, "[pre_tool_use: " + n.hookSub + "]", "node-sub-hook"));
+      }
+    });
+
+    // connect arrows
+    for (let i = 0; i < nodes.length - 1; i++) {
+      const top = nodes[i].y + 55;
+      const bot = nodes[i + 1].y;
+      svg.appendChild(line(190, top, 190, bot));
+    }
+
+    // loop-back arrow from bottom to compile node
+    svg.appendChild(loopback(nodes[6].y + 27, nodes[1].y + 27));
+  }
+
+  function preProjStrategy(name) {
+    return /^Compaction::/.test(name);
+  }
+  function preToolUseStrategy(name) {
+    return /^Permission::/.test(name);
+  }
+  function sumStrategies(list) {
+    if (!list.length) return null;
+    return list.map(s => s.name).join(", ");
+  }
+
+  function rect(x, y, w, h, n) {
+    const r = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    r.setAttribute("x", x); r.setAttribute("y", y);
+    r.setAttribute("width", w); r.setAttribute("height", h);
+    r.setAttribute("rx", 4);
+    let fill = "#fff", stroke = "#e6e4dc";
+    if (n.kind === "irreducible") { fill = "#ece7de"; stroke = "#a36b3a"; }
+    else if (n.kind === "slot")   { fill = "#f4f3ee"; stroke = "#8a6d3b"; }
+    else if (n.kind === "dispatch") { fill = "#f4f3ee"; stroke = "#a36b3a"; }
+    r.setAttribute("fill", fill);
+    r.setAttribute("stroke", stroke);
+    r.setAttribute("stroke-width", "1");
+    return r;
+  }
+
+  function labelText(x, y, text, cls) {
+    const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    t.setAttribute("x", x); t.setAttribute("y", y);
+    t.setAttribute("font-family", "ui-monospace, SFMono-Regular, Menlo, monospace");
+    if (cls === "node-label") {
+      t.setAttribute("font-size", "13");
+      t.setAttribute("font-weight", "500");
+      t.setAttribute("fill", "#2c2c2c");
+    } else if (cls === "node-sub-hook") {
+      t.setAttribute("font-size", "10");
+      t.setAttribute("fill", "#a36b3a");
+    } else {
+      t.setAttribute("font-size", "11");
+      t.setAttribute("fill", "#8b8b85");
+    }
+    t.textContent = text;
+    return t;
+  }
+
+  function line(x1, y1, x2, y2) {
+    const l = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    l.setAttribute("x1", x1); l.setAttribute("y1", y1);
+    l.setAttribute("x2", x2); l.setAttribute("y2", y2);
+    l.setAttribute("stroke", "#cccac2"); l.setAttribute("stroke-width", "1");
+    return l;
+  }
+
+  function loopback(yFrom, yTo) {
+    const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    const d = "M 360 " + yFrom + " Q 380 " + yFrom + " 380 " + ((yFrom + yTo) / 2) +
+              " Q 380 " + yTo + " 360 " + yTo;
+    p.setAttribute("d", d);
+    p.setAttribute("fill", "none");
+    p.setAttribute("stroke", "#cccac2");
+    p.setAttribute("stroke-dasharray", "3,3");
+    p.setAttribute("stroke-width", "1");
+    return p;
+  }
+})();
+</script>
+</body>
+</html>

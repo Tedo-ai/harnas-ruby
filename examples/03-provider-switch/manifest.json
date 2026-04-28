@@ -1,0 +1,13 @@
+{
+  "harnas_version": "0.1",
+  "name": "provider-switch",
+
+  "provider": {
+    "kind": "mock",
+    "model": "mock-test",
+    "max_tokens": 1024
+  },
+
+  "tools": [],
+  "strategies": []
+}

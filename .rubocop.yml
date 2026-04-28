@@ -1,0 +1,76 @@
+AllCops:
+  TargetRubyVersion: 3.4
+  NewCops: enable
+  SuggestExtensions: false
+  Exclude:
+    - "vendor/**/*"
+    - "tmp/**/*"
+
+# Codebase uses double quotes consistently.
+Style/StringLiterals:
+  EnforcedStyle: double_quotes
+Style/StringLiteralsInInterpolation:
+  EnforcedStyle: double_quotes
+
+# Spec files routinely have long describe/context blocks; bin/ scripts
+# are single-file demonstrations whose main loop is legitimately one
+# cohesive block.
+Metrics/BlockLength:
+  Exclude:
+    - "spec/**/*"
+    - "bin/**/*"
+
+# This project owns short, sharp value objects; the default 100 is fine.
+Layout/LineLength:
+  Max: 100
+
+# The reference implementation is informative; classes carry intent in
+# the spec, not in source-level docstrings.
+Style/Documentation:
+  Enabled: false
+
+# Many methods do "do the work + emit observation" — instrumentation
+# adds ~6 lines. 25 covers instrumented methods without permitting
+# real bloat. Spec files are excluded entirely (test setup blocks
+# get long for legitimate readability reasons).
+Metrics/MethodLength:
+  Max: 25
+  Exclude:
+    - "spec/**/*"
+
+# Value-object initializers run several boundary validations in
+# sequence; the resulting branch count is an explicit-checks signal,
+# not a complexity smell.
+Metrics/CyclomaticComplexity:
+  Max: 12
+Metrics/PerceivedComplexity:
+  Max: 12
+
+# Pure-function analyzers tend to weigh assignments and conditionals
+# against the same threshold; the default 17 is tight for explicit
+# multi-stage logic. 25 covers what we have without permitting bloat.
+# Spec files are excluded entirely.
+Metrics/AbcSize:
+  Max: 25
+  Exclude:
+    - "spec/**/*"
+
+# Orchestrator constructors take several injected components (session,
+# projection, provider, ingestor, runner, max_turns) — all named
+# keywords for call-site readability. Six is reasonable for a class
+# that wires up several subsystems.
+Metrics/ParameterLists:
+  Max: 7
+
+# Streaming parsers accumulate state across many small dispatch
+# methods; 200 accommodates them without permitting real class bloat.
+Metrics/ClassLength:
+  Max: 200
+
+# The Manifest loader is a glue module that resolves several subsystems
+# (provider kinds, strategy catalog, callable handlers, bundle injection)
+# and legitimately benefits from living in one file so the resolution
+# logic can be read top-to-bottom. 250 accommodates the registries + the
+# resolution helpers without permitting real module bloat.
+Metrics/ModuleLength:
+  Max: 250

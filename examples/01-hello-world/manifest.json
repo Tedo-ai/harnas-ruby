@@ -1,0 +1,15 @@
+{
+  "harnas_version": "0.1",
+  "name": "hello-world",
+
+  "system": "You are a concise assistant. Reply in a single sentence.",
+
+  "provider": {
+    "kind": "mock",
+    "model": "mock-test",
+    "max_tokens": 1024
+  },
+
+  "tools": [],
+  "strategies": []
+}

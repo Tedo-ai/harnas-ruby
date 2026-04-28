@@ -1,0 +1,21 @@
+{
+  "harnas_version": "0.1",
+  "name": "tool-calling",
+
+  "provider": {
+    "kind": "mock",
+    "model": "mock-test",
+    "max_tokens": 1024
+  },
+
+  "tools": [
+    {
+      "name": "get_current_time",
+      "handler": "examples.get_current_time",
+      "description": "Returns the current UTC time as an ISO-8601 string.",
+      "input_schema": { "type": "object", "properties": {}, "required": [] }
+    }
+  ],
+
+  "strategies": []
+}

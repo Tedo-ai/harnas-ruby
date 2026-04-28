@@ -1,0 +1,13 @@
+{
+  "harnas_version": "0.1",
+  "name": "minimal",
+
+  "provider": {
+    "kind": "mock",
+    "max_tokens": 1024
+  },
+
+  "tools": [],
+
+  "strategies": []
+}

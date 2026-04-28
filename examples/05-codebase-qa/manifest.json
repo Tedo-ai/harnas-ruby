@@ -1,0 +1,73 @@
+{
+  "harnas_version": "0.1",
+  "name": "codebase-qa",
+
+  "system": "You are a concise codebase assistant working in a Ruby repository. Use the available tools to answer questions accurately. Prefer grep and glob to locate code, read_file to inspect it, and edit_file only when the user explicitly asks you to change something. Always show the path:line references you relied on. Keep replies under 10 sentences unless asked to elaborate.",
+
+  "provider": {
+    "kind": "anthropic",
+    "model": "claude-sonnet-4-5",
+    "max_tokens": 2048
+  },
+
+  "tools": [
+    { "name": "read_file",
+      "handler": "harnas.builtin.read_file",
+      "description": "Read the contents of a file at the given path.",
+      "input_schema": {
+        "type": "object",
+        "properties": { "path": { "type": "string" } },
+        "required": ["path"]
+      } },
+    { "name": "list_dir",
+      "handler": "harnas.builtin.list_dir",
+      "description": "List the entries of the directory at the given path.",
+      "input_schema": {
+        "type": "object",
+        "properties": { "path": { "type": "string" } },
+        "required": ["path"]
+      } },
+    { "name": "glob",
+      "handler": "harnas.builtin.glob",
+      "description": "Find files matching a glob pattern (e.g. \"**/*.rb\") under the optional `path` root.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "pattern": { "type": "string" },
+          "path": { "type": "string" }
+        },
+        "required": ["pattern"]
+      } },
+    { "name": "grep",
+      "handler": "harnas.builtin.grep",
+      "description": "Search for a regular expression in file contents under the given path. Returns path:lineno:content matches.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "pattern": { "type": "string" },
+          "path": { "type": "string" },
+          "glob": { "type": "string" },
+          "case_insensitive": { "type": "boolean" }
+        },
+        "required": ["pattern", "path"]
+      } },
+    { "name": "edit_file",
+      "handler": "harnas.builtin.edit_file",
+      "description": "Replace one occurrence of `old_string` with `new_string` in the file. Pass replace_all: true to replace every occurrence.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "old_string": { "type": "string" },
+          "new_string": { "type": "string" },
+          "replace_all": { "type": "boolean" }
+        },
+        "required": ["path", "old_string", "new_string"]
+      } }
+  ],
+
+  "strategies": [
+    { "name": "Compaction::MarkerTail",
+      "config": { "max_messages": 30, "keep_recent": 10 } }
+  ]
+}

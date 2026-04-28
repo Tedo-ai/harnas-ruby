@@ -1,0 +1,1310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harnas</title>
+<style>
+  :root {
+    --bg:        #fafaf7;
+    --panel:     #ffffff;
+    --panel-2:   #f4f3ee;
+    --border:    #e6e4dc;
+    --text:      #2c2c2c;
+    --muted:     #8b8b85;
+    --accent:    #4a6da3;
+
+    --user:      #4a6da3;
+    --asst:      #8a6d3b;
+    --tool-use:  #a36b3a;
+    --tool-res:  #4f8569;
+    --summary:   #8b8b85;
+    --error:     #b04a3a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    height: 100%; margin: 0;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 14px; line-height: 1.55;
+  }
+
+  header {
+    padding: 14px 22px; border-bottom: 1px solid var(--border);
+    display: flex; gap: 18px; align-items: baseline; flex-wrap: wrap;
+    background: var(--panel);
+  }
+  header .title { font-weight: 600; font-size: 15px; color: var(--text); }
+  header .meta  { color: var(--muted); font-size: 13px; }
+  header .meta strong { color: var(--text); font-weight: 500; }
+  header .status { margin-left: auto; color: var(--muted); font-size: 12px; }
+  header .status.connected { color: var(--text); }
+  header .status.error     { color: var(--error); }
+  header select {
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 4px;
+    font-family: inherit; font-size: 13px; padding: 3px 6px;
+  }
+  header select:focus { outline: none; border-color: var(--accent); }
+
+  main {
+    display: flex; flex-direction: column;
+    height: calc(100vh - 51px);
+    overflow: hidden;
+  }
+
+  /* Compact horizontal strip fused under the header. Tiny toggle
+     label flips between context and timeline data. Clicking a
+     block jumps to that event in the matching tab. */
+  #strip-wrap {
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 0 4px 10px; flex-shrink: 0;
+  }
+  #strip-toggle {
+    background: transparent; border: none; cursor: pointer;
+    color: var(--muted); font-size: 9.5px; letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-family: inherit; padding: 0 4px;
+    flex-shrink: 0;
+  }
+  #strip-toggle:hover { color: var(--text); }
+  #strip { flex: 1; height: 18px; display: block; }
+  #strip rect { cursor: pointer; }
+
+  /* Tab bar: one row of tabs full-width, active tab underlined. */
+  .tabs {
+    display: flex; gap: 0; border-bottom: 1px solid var(--border);
+    background: var(--panel); flex-shrink: 0;
+  }
+  .tabs .tab {
+    padding: 10px 18px;
+    background: transparent; border: none; cursor: pointer;
+    color: var(--muted); font-family: inherit; font-size: 12.5px;
+    border-bottom: 2px solid transparent;
+  }
+  .tabs .tab:hover { color: var(--text); }
+  .tabs .tab.active { color: var(--text); border-bottom-color: var(--accent); }
+
+  /* Each tab's content lives in its own panel. Exactly one visible
+     at a time. Panels fill the remaining vertical space; individual
+     panels control their own internal layout. */
+  .tab-content { flex: 1; min-height: 0; display: flex; }
+  .tab-panel { flex: 1; min-width: 0; overflow: hidden;
+               display: none; flex-direction: column; }
+  .tab-panel.active { display: flex; }
+
+  /* Chat tab: scrolling messages + input pinned at the bottom. */
+  #panel-chat #chat {
+    flex: 1; min-height: 0; overflow-y: auto;
+    padding: 22px 28px 10px;
+  }
+  #panel-chat #chat-input {
+    display: flex; gap: 8px; padding: 10px 28px 14px;
+    background: var(--panel); border-top: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  #panel-chat #chat-input input {
+    flex: 1; padding: 9px 14px; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); font-family: inherit; font-size: 14px;
+  }
+  #panel-chat #chat-input input:focus { outline: none; border-color: var(--accent); }
+  #panel-chat #chat-input button {
+    padding: 9px 20px; background: var(--text); color: var(--bg);
+    border: none; border-radius: 6px; cursor: pointer;
+    font-family: inherit; font-size: 14px;
+  }
+
+  /* Context / Timeline tabs share a detail-view layout:
+     legend across the top + scrollable list of rows below. */
+  .detail-view { display: flex; flex-direction: column;
+                 height: 100%; min-height: 0; }
+  .detail-header {
+    padding: 14px 24px 10px; border-bottom: 1px solid var(--border);
+    background: var(--panel); flex-shrink: 0;
+  }
+  .detail-intro { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+  .legend .lg-item {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11.5px; color: var(--text);
+  }
+  .legend .lg-swatch {
+    width: 12px; height: 12px; border-radius: 2px;
+    display: inline-block; flex-shrink: 0;
+  }
+  .legend .lg-item .lg-name { font-family: ui-monospace, Menlo, monospace; font-size: 11px; }
+  .legend .lg-item .lg-desc { color: var(--muted); font-size: 11px; }
+
+  .detail-list { flex: 1; overflow-y: auto; padding: 6px 0; }
+  .evt-row {
+    display: grid;
+    grid-template-columns: 6px 48px 180px 1fr;
+    gap: 10px; align-items: start;
+    padding: 8px 24px; border-bottom: 1px dotted var(--border);
+  }
+  .evt-row:hover { background: var(--panel-2); }
+  .evt-row.highlight { background: #fff4d1; }
+  .evt-row.dropped { opacity: 0.55; }
+  .evt-row.dropped .evt-body { color: var(--muted); font-style: italic; }
+
+  .evt-bar { width: 6px; min-height: 18px; border-radius: 2px; background: var(--border); }
+  .evt-seq { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; font-family: ui-monospace, Menlo, monospace; }
+  .evt-type { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; color: var(--text); }
+  .evt-type .desc { color: var(--muted); font-family: -apple-system, system-ui, sans-serif; font-size: 11px; display: block; margin-top: 2px; }
+  .evt-type .tag {
+    display: inline-block; margin-left: 6px; padding: 1px 6px;
+    font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.05em;
+    border-radius: 3px; border: 1px solid var(--summary); color: var(--summary);
+    font-family: -apple-system, system-ui, sans-serif;
+  }
+  .evt-type .tag.tag-dropped { border-color: var(--muted); color: var(--muted); }
+  .evt-type .tag.tag-mutation { border-color: var(--tool-use); color: var(--tool-use); }
+
+  .evt-body {
+    font-family: ui-monospace, Menlo, monospace; font-size: 12px;
+    color: #555; white-space: pre-wrap; word-break: break-word;
+    max-height: 8em; overflow: hidden;
+  }
+  .evt-body.expanded { max-height: none; }
+
+  /* Visually distinct treatment for compaction events in the
+     detail lists — these are the rows that REPLACE other events. */
+  .evt-row.is-summary .evt-bar { background: var(--summary); }
+  .evt-row.is-summary { border: 1px dashed var(--summary);
+                        margin: 6px 10px; border-radius: 4px;
+                        background: #fbf9f4; }
+  .evt-row.is-compact .evt-bar { background: var(--tool-use); }
+  .evt-row.is-compact { border-left: 3px solid var(--tool-use); background: #fdf7ef; }
+
+  /* Runtime + Config panels are simple scrollable blocks. Override
+     the panel's flex layout so overflow-y:auto works as expected. */
+  #panel-runtime.active,
+  #panel-config.active { display: block; overflow-y: auto; padding: 18px 24px; }
+
+  /* Chat messages: label is the only thing colored. Bubble is plain. */
+  .msg { margin-bottom: 18px; max-width: 760px; }
+  .msg .who {
+    font-size: 11px; text-transform: lowercase;
+    letter-spacing: 0.02em; color: var(--muted); margin-bottom: 4px;
+  }
+  .msg.user        .who { color: var(--user); }
+  .msg.assistant   .who { color: var(--asst); }
+  .msg.tool_use    .who { color: var(--tool-use); }
+  .msg.tool_result .who { color: var(--tool-res); }
+  .msg.summary     .who { color: var(--summary); }
+  .msg.error       .who { color: var(--error); }
+  .msg.error .body { color: var(--error); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  .msg .body {
+    white-space: pre-wrap; word-break: break-word;
+    color: var(--text);
+  }
+  .msg.summary   .body { color: var(--muted); font-style: italic; }
+  .msg.tool_use  .body, .msg.tool_result .body {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px; color: #555;
+  }
+
+  /* Runtime + Config panels share a few display primitives. */
+  .section-label {
+    color: var(--muted); font-size: 11px; letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-top: 18px; margin-bottom: 8px;
+  }
+  .section-label:first-child { margin-top: 0; }
+
+  .stats {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 24px;
+    max-width: 720px;
+  }
+  .stats .stat {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 8px 12px; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 4px;
+  }
+  .stats .stat .lbl { color: var(--muted); font-size: 11.5px; letter-spacing: 0.02em; }
+  .stats .stat .val { color: var(--text); font-size: 18px; font-weight: 500;
+                      font-variant-numeric: tabular-nums; font-family: ui-monospace, Menlo, monospace; }
+
+  /* Harness configuration panel */
+  #config { font-size: 12.5px; }
+  #config .cfg-row {
+    display: flex; gap: 8px; padding: 2px 0;
+    border-bottom: 1px dotted var(--border);
+  }
+  #config .cfg-row .k { color: var(--muted); min-width: 92px; }
+  #config .cfg-row .v { color: var(--text); font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; word-break: break-all; }
+  #config .cfg-sub {
+    color: var(--muted); font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    margin-top: 10px; margin-bottom: 4px;
+  }
+  #config ul.cfg-list { list-style: none; padding: 0; margin: 0; }
+  #config ul.cfg-list li {
+    padding: 3px 0; font-family: ui-monospace, Menlo, monospace;
+    font-size: 11.5px; color: var(--text);
+    border-bottom: 1px dotted var(--border);
+  }
+  #config ul.cfg-list li .detail { color: var(--muted); font-family: -apple-system, system-ui, sans-serif; font-size: 11px; margin-left: 6px; }
+  #config ul.cfg-list li .count  { color: var(--muted); font-size: 11px; margin-left: 4px; }
+  #events {
+    list-style: none; padding: 0; margin: 0; font-size: 12px;
+    max-width: 900px;
+  }
+  #events li {
+    padding: 5px 10px; color: var(--muted);
+    display: grid; grid-template-columns: 200px 1fr; gap: 14px;
+    border-bottom: 1px dotted var(--border);
+  }
+  #events .name {
+    color: var(--text); font-family: ui-monospace, Menlo, monospace;
+    font-size: 11.5px;
+  }
+  #events .meta { color: var(--muted); font-size: 11.5px;
+                  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #events .system, #events .error { font-style: italic; }
+  #events .error .name { color: var(--error); }
+</style>
+</head>
+<body>
+<header>
+  <div class="title">harnas</div>
+  <div class="meta">
+    <select id="provider-select" title="switch the provider used for the next turn"></select>
+  </div>
+  <div class="meta" id="meta-model">…</div>
+  <div class="meta" id="meta-tokens">in: 0 · out: 0</div>
+  <div class="meta" id="meta-deltas" title="assistant_text_delta events received this turn">δ 0</div>
+  <div class="status" id="status">connecting…</div>
+</header>
+
+<main>
+  <div id="strip-wrap">
+    <button id="strip-toggle" title="click label to toggle context / timeline view. click a block to jump to that event.">context</button>
+    <svg id="strip" preserveAspectRatio="none" viewBox="0 0 1000 18"></svg>
+  </div>
+
+  <nav class="tabs" id="main-tabs">
+    <button class="tab active" data-tab="chat">chat</button>
+    <button class="tab" data-tab="context">context</button>
+    <button class="tab" data-tab="timeline">timeline</button>
+    <button class="tab" data-tab="runtime">runtime</button>
+    <button class="tab" data-tab="config">config</button>
+  </nav>
+
+  <div class="tab-content">
+    <section class="tab-panel active" id="panel-chat" data-panel="chat">
+      <div id="chat"></div>
+      <div id="chat-input">
+        <input id="input" placeholder="message…" autocomplete="off" autofocus>
+        <button id="send">send</button>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="panel-context" data-panel="context">
+      <div class="detail-view">
+        <div class="detail-header">
+          <div class="detail-intro">
+            The <strong>projection</strong> — what will be sent to the provider on the next turn.
+            Mutations applied, streaming deltas collapsed into single messages,
+            turn-bracket meta events (<code>:assistant_turn_started</code>, <code>_completed</code>) hidden.
+          </div>
+          <div class="detail-intro">
+            <strong>Reading compactions:</strong>
+            when a <code>:compact</code> fires, you'll see a <em>dashed</em> row labeled
+            <code>summary · synthetic · replaces […]</code> &mdash; that's the one block
+            the provider actually sees in place of the earlier events. The rows immediately
+            below it (italic, dimmed, tagged <em>replaced by #N</em>) are the
+            original events; they still exist in the Log (see the Timeline tab) but the
+            projection hides them behind the summary.
+          </div>
+          <div class="legend" id="legend-context"></div>
+        </div>
+        <div class="detail-list" id="list-context"></div>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="panel-timeline" data-panel="timeline">
+      <div class="detail-view">
+        <div class="detail-header">
+          <div class="detail-intro">
+            The <strong>raw Log</strong> — every Event that entered the Session's Log,
+            in seq order. Every streaming delta is its own row. Mutation events
+            (<code>:compact</code>, <code>:revert</code>) are visible; turn brackets are visible.
+            This is the substrate the Session owns; the <em>context</em> tab is a
+            derived projection over it.
+          </div>
+          <div class="detail-intro">
+            <strong>Reading compactions:</strong>
+            a <code>:compact</code> row is the mutation event itself &mdash; outlined in
+            amber, tagged <em>mutation · hides […]</em>. Events whose seq appears in the
+            compact's <code>replaces</code> list are still in the log (this is an append-only
+            substrate; nothing is deleted), but they're dimmed and tagged
+            <em>replaced by #N</em> to show they've been hidden from downstream projections.
+          </div>
+          <div class="legend" id="legend-timeline"></div>
+        </div>
+        <div class="detail-list" id="list-timeline"></div>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="panel-runtime" data-panel="runtime">
+      <div class="section-label">stats</div>
+      <div class="stats">
+        <div class="stat"><span class="lbl">log size</span><span class="val" id="stat-logsize">0</span></div>
+        <div class="stat"><span class="lbl">turns</span><span class="val" id="stat-turns">0</span></div>
+        <div class="stat"><span class="lbl">input tokens</span><span class="val" id="stat-input">0</span></div>
+        <div class="stat"><span class="lbl">output tokens</span><span class="val" id="stat-output">0</span></div>
+        <div class="stat"><span class="lbl">compactions</span><span class="val" id="stat-compactions">0</span></div>
+        <div class="stat"><span class="lbl">tool calls</span><span class="val" id="stat-tools">0</span></div>
+      </div>
+
+      <div class="section-label">recent events</div>
+      <ul id="events"></ul>
+    </section>
+
+    <section class="tab-panel" id="panel-config" data-panel="config">
+      <div id="config"></div>
+    </section>
+  </div>
+</main>
+
+<script>
+(() => {
+  const COLORS = {
+    user_message:            "#4a6da3",
+    assistant_message:       "#8a6d3b",
+    assistant_text_delta:    "#8a6d3b",
+    tool_use:                "#a36b3a",
+    tool_use_begin:          "#a36b3a",
+    tool_use_argument_delta: "#a36b3a",
+    tool_use_end:            "#a36b3a",
+    tool_result:             "#4f8569",
+    summary:                 "#8b8b85",
+    assistant_turn_started:  "#cccac2",
+    assistant_turn_completed:"#cccac2",
+    assistant_turn_failed:   "#b04a3a"
+  };
+  const MESSAGE_TYPES = new Set([
+    "user_message", "assistant_message", "tool_use", "tool_result", "summary"
+  ]);
+
+  const state = {
+    log: [],
+    streamingMsgEl: null,
+    streamingMsgText: "",
+    // Keyed by tool_use_id — each value is { el, name, argsText }
+    toolBubbles: {},
+    // Delta counter (resets per turn) — shown in the header so the
+    // user can tell at a glance whether streaming events are arriving
+    // one by one or bunched at the end.
+    deltaCount: 0,
+    // rAF-batched render flags for expensive operations only (stats
+    // recompute, strip redraw). The bubble text itself writes
+    // synchronously on every delta so streaming is never invisibly
+    // coalesced into a single end-of-turn paint.
+    pendingFrame: null,
+    dirtyTools:  false,
+    dirtyStrip:  false,
+    dirtyStats:  false
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const chat = $("chat");
+  const events = $("events");
+  const stripEl     = $("strip");
+  const stripToggle = $("strip-toggle");
+  // Which view the single strip is showing: "context" or "timeline".
+  let stripView = "context";
+  stripToggle.addEventListener("click", () => {
+    stripView = stripView === "context" ? "timeline" : "context";
+    stripToggle.textContent = stripView;
+    redrawStrip();
+  });
+  const status = $("status");
+  const input = $("input");
+  const sendBtn = $("send");
+
+  const wsUrl = (location.protocol === "https:" ? "wss" : "ws") + "://" + location.host + "/";
+  let ws;
+
+  function setStatus(cls, text) {
+    status.className = "status " + cls;
+    status.textContent = text;
+  }
+
+  function connect() {
+    setStatus("", "connecting…");
+    ws = new WebSocket(wsUrl);
+    ws.onopen    = () => setStatus("connected", "live");
+    ws.onclose   = () => { setStatus("error", "disconnected"); setTimeout(connect, 1500); };
+    ws.onerror   = () => setStatus("error", "error");
+    ws.onmessage = (e) => {
+      // Streaming-bottleneck diagnostic: log arrival time of each
+      // delta message to the console so we can correlate browser
+      // receipt with server emission (see bin/web.rb's stderr
+      // timing trace).
+      if (e.data.indexOf("text_delta") > 0 || e.data.indexOf("argument_delta") > 0) {
+        console.log("[" + performance.now().toFixed(1) + "ms] ws message (" + e.data.length + " bytes)");
+      }
+      onMessage(JSON.parse(e.data));
+    };
+  }
+  connect();
+
+  sendBtn.addEventListener("click", send);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") send(); });
+
+  // Main tab switcher.
+  function switchTab(target, options = {}) {
+    document.querySelectorAll("#main-tabs .tab").forEach(b => {
+      b.classList.toggle("active", b.dataset.tab === target);
+    });
+    document.querySelectorAll(".tab-panel").forEach(p => {
+      p.classList.toggle("active", p.dataset.panel === target);
+    });
+    if (options.highlightSeq != null) {
+      highlightEventRow(target, options.highlightSeq);
+    }
+  }
+  document.querySelectorAll("#main-tabs .tab").forEach(btn => {
+    btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+  });
+
+  function highlightEventRow(target, seq) {
+    if (target !== "context" && target !== "timeline") return;
+    const list = document.getElementById("list-" + target);
+    if (!list) return;
+    // Defer so the panel's display:flex has taken effect and layout is valid.
+    requestAnimationFrame(() => {
+      list.querySelectorAll(".evt-row.highlight").forEach(el => el.classList.remove("highlight"));
+      const row = list.querySelector('.evt-row[data-seq="' + seq + '"]');
+      if (row) {
+        row.classList.add("highlight");
+        row.scrollIntoView({ block: "center", behavior: "smooth" });
+      }
+    });
+  }
+
+  function send() {
+    const text = input.value.trim();
+    if (!text || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ kind: "user_message", text }));
+    input.value = "";
+  }
+
+  function onMessage(msg) {
+    if (msg.kind === "hello") {
+      renderProviderSelect(msg.providers || [], msg.provider);
+      $("meta-model").textContent = msg.model;
+      renderConfig(msg.config);
+      // Reset and replay the full log
+      state.log = [];
+      chat.innerHTML = "";
+      msg.log.forEach(evt => appendLogEvent(evt));
+      scheduleRender({ bubble: true, strip: true, stats: true });
+      return;
+    }
+    if (msg.kind === "provider_changed") {
+      // Server confirms the switch; reflect in the UI.
+      $("meta-model").textContent = msg.model;
+      $("provider-select").value = msg.provider;
+      renderConfig(msg.config);
+      addInspector("system", "provider → " + msg.label);
+      return;
+    }
+    if (msg.kind === "system") { addInspector("system", msg.message); return; }
+    if (msg.kind === "error")  { addInspector("error",  msg.message); return; }
+    if (msg.kind !== "observation") return;
+
+    handleObservation(msg.event_name, msg.payload);
+  }
+
+  // ──── harness configuration panel ────
+  function renderConfig(cfg) {
+    const root = $("config");
+    root.innerHTML = "";
+    if (!cfg) return;
+
+    // Provider details
+    if (cfg.provider) {
+      row(root, "provider",   cfg.provider.kind + " (" + (cfg.provider.streaming ? "streaming" : "buffered") + ")");
+      row(root, "model",      cfg.provider.model);
+      row(root, "projection", cfg.provider.projection_class);
+    }
+    row(root, "max_turns", cfg.max_turns);
+
+    // Tools (Layer 3 registry)
+    if (cfg.tools && cfg.tools.length) {
+      sub(root, "tools · " + cfg.tools.length);
+      const ul = document.createElement("ul");
+      ul.className = "cfg-list";
+      cfg.tools.forEach(t => {
+        const li = document.createElement("li");
+        const name = document.createElement("span");
+        name.textContent = t.name;
+        const detail = document.createElement("span");
+        detail.className = "detail";
+        detail.textContent = t.description || "";
+        li.appendChild(name);
+        li.appendChild(detail);
+        ul.appendChild(li);
+      });
+      root.appendChild(ul);
+    } else {
+      sub(root, "tools");
+      row(root, "", "(no tools registered)");
+    }
+
+    // Strategies (Layer 2 canonical)
+    sub(root, "strategies · " + (cfg.strategies_installed || []).length);
+    if ((cfg.strategies_installed || []).length === 0) {
+      row(root, "", "(none installed)");
+    } else {
+      const ul = document.createElement("ul");
+      ul.className = "cfg-list";
+      cfg.strategies_installed.forEach(s => {
+        const li = document.createElement("li");
+        li.textContent = s;
+        ul.appendChild(li);
+      });
+      root.appendChild(ul);
+    }
+
+    // Hooks (Layer 1 attachment points — count of handlers registered)
+    sub(root, "hooks");
+    const hooks = cfg.hooks || {};
+    const names = Object.keys(hooks).sort();
+    if (names.length === 0) {
+      row(root, "", "(no handlers registered)");
+    } else {
+      const ul = document.createElement("ul");
+      ul.className = "cfg-list";
+      names.forEach(h => {
+        const li = document.createElement("li");
+        const name = document.createElement("span");
+        name.textContent = ":" + h;
+        const count = document.createElement("span");
+        count.className = "count";
+        count.textContent = "× " + hooks[h];
+        li.appendChild(name);
+        li.appendChild(count);
+        ul.appendChild(li);
+      });
+      root.appendChild(ul);
+    }
+  }
+
+  function row(root, k, v) {
+    const el = document.createElement("div");
+    el.className = "cfg-row";
+    el.innerHTML = '<span class="k"></span><span class="v"></span>';
+    el.querySelector(".k").textContent = k;
+    el.querySelector(".v").textContent = v == null ? "" : String(v);
+    root.appendChild(el);
+  }
+
+  function sub(root, label) {
+    const el = document.createElement("div");
+    el.className = "cfg-sub";
+    el.textContent = label;
+    root.appendChild(el);
+  }
+
+  function renderProviderSelect(providers, current) {
+    const sel = $("provider-select");
+    sel.innerHTML = "";
+    providers.forEach(p => {
+      const opt = document.createElement("option");
+      opt.value = p.kind;
+      opt.textContent = p.label;
+      if (p.kind === current) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    sel.onchange = () => {
+      if (ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify({ kind: "set_provider", provider: sel.value }));
+    };
+  }
+
+  function handleObservation(name, payload) {
+    addInspector(name.replace(/_/g, " "), describe(name, payload));
+
+    if (name === "event_appended") {
+      const evt = payload.event;
+      if (!evt) return;
+      appendLogEvent(evt);
+      scheduleRender({
+        tools: evt.type === "tool_use_argument_delta",
+        strip: true,
+        stats: true
+      });
+    }
+  }
+
+  // Coalesce DOM updates into one per animation frame. Without this, a
+  // burst of WebSocket messages (deltas tend to arrive in Nagle-batched
+  // clumps) keeps the JS thread too busy to let the browser paint,
+  // producing the "final state appears all at once" effect even when
+  // state is being updated continuously.
+  function scheduleRender({ tools, strip, stats }) {
+    if (tools) state.dirtyTools = true;
+    if (strip) state.dirtyStrip = true;
+    if (stats) state.dirtyStats = true;
+    if (state.pendingFrame !== null) return;
+    state.pendingFrame = requestAnimationFrame(() => {
+      state.pendingFrame = null;
+      if (state.dirtyTools) { state.dirtyTools = false; flushToolBubbles(); }
+      if (state.dirtyStats) { state.dirtyStats = false; recomputeStats();   }
+      if (state.dirtyStrip) { state.dirtyStrip = false; redrawStrip();      }
+    });
+  }
+
+  function flushStreamingBubble() {
+    if (!state.streamingMsgEl) return;
+    // The body text has been built up with appendChild(text-node)s
+    // during streaming, so no reassignment is needed here. Just make
+    // sure we're scrolled to the bottom.
+    scrollChat();
+  }
+
+  // Debounce scrollChat calls to at most one per animation frame.
+  // Reading chat.scrollHeight forces layout of the full chat column,
+  // which gets expensive as the conversation grows.
+  let scrollPending = false;
+  function scheduleScroll() {
+    if (scrollPending) return;
+    scrollPending = true;
+    requestAnimationFrame(() => { scrollPending = false; scrollChat(); });
+  }
+
+  function flushToolBubbles() {
+    for (const id in state.toolBubbles) {
+      const t = state.toolBubbles[id];
+      if (!t.el) continue;
+      t.el.querySelector(".body").textContent = formatToolUseBody(t.name, t.argsText);
+    }
+    scrollChat();
+  }
+
+  function formatToolUseBody(name, argsText) {
+    return name + "(" + (argsText || "…") + ")";
+  }
+
+  // ──── stats: derived from the log so reconnects show correct values ────
+
+  function recomputeStats() {
+    let inTok = 0, outTok = 0, turns = 0, compactions = 0, tools = 0;
+    state.log.forEach(e => {
+      if (e.type === "assistant_message") {
+        turns += 1;
+        const u = (e.payload && e.payload.usage) || {};
+        inTok  += Number(u.input_tokens)  || 0;
+        outTok += Number(u.output_tokens) || 0;
+      } else if (e.type === "compact") {
+        compactions += 1;
+      } else if (e.type === "tool_use") {
+        tools += 1;
+      }
+    });
+    $("stat-logsize").textContent     = state.log.length;
+    $("stat-turns").textContent       = turns;
+    $("stat-input").textContent       = inTok;
+    $("stat-output").textContent      = outTok;
+    $("stat-compactions").textContent = compactions;
+    $("stat-tools").textContent       = tools;
+    $("meta-tokens").textContent      = `in: ${inTok} · out: ${outTok}`;
+  }
+
+  // ──── chat rendering ────
+
+  function appendLogEvent(evt) {
+    state.log.push(evt);
+
+    // ── text streaming ───────────────────────────────────────────
+    if (evt.type === "assistant_text_delta") {
+      ensureStreamingBubble();
+      const chunk = evt.payload.chunk || "";
+      state.streamingMsgText += chunk;
+      // Append only the new chunk as a text node instead of
+      // reassigning textContent with the full accumulated string —
+      // that was O(n²) on long messages and gave the browser less
+      // paint budget as the chat grew taller.
+      state.streamingMsgEl.querySelector(".body")
+        .appendChild(document.createTextNode(chunk));
+      // scrollChat reads scrollHeight which forces a full layout of
+      // the chat container. On a tall chat that's expensive; batch
+      // scroll updates to once per animation frame.
+      scheduleScroll();
+      state.deltaCount += 1;
+      $("meta-deltas").textContent = "δ " + state.deltaCount;
+      return;
+    }
+    if (evt.type === "assistant_turn_started") {
+      state.streamingMsgEl = null;
+      state.streamingMsgText = "";
+      state.deltaCount = 0;
+      $("meta-deltas").textContent = "δ 0";
+      return;
+    }
+    if (evt.type === "assistant_turn_completed") {
+      flushStreamingBubble();
+      state.streamingMsgEl = null;
+      state.streamingMsgText = "";
+      return;
+    }
+    if (evt.type === "assistant_turn_failed") {
+      // Surface the error as a visible chat entry so the user sees *why*
+      // the turn produced nothing. Before this, these events only hit
+      // the inspector panel where they were easy to miss.
+      const node = makeMessageNode("error", (evt.payload && evt.payload.error) || "turn failed");
+      chat.appendChild(node);
+      scrollChat();
+      state.streamingMsgEl = null;
+      state.streamingMsgText = "";
+      return;
+    }
+
+    // ── tool-use streaming ───────────────────────────────────────
+    // Same pattern as text: create a bubble on begin, accumulate
+    // partial-JSON arg chunks into displayed args, finalize on end.
+    if (evt.type === "tool_use_begin") {
+      ensureToolBubble(evt.payload.tool_use_id, evt.payload.name);
+      return;
+    }
+    if (evt.type === "tool_use_argument_delta") {
+      const t = ensureToolBubble(evt.payload.tool_use_id, null);
+      t.argsText += (evt.payload.chunk || "");
+      return;
+    }
+    if (evt.type === "tool_use_end") {
+      // Replace the streaming partial-JSON with the parsed-args
+      // representation so the final display matches the consolidated
+      // tool_use event.
+      const t = state.toolBubbles[evt.payload.tool_use_id];
+      if (t) {
+        t.argsText = JSON.stringify(evt.payload.arguments || {});
+        t.el.querySelector(".body").textContent = formatToolUseBody(t.name, t.argsText);
+      }
+      return;
+    }
+
+    // ── consolidated message events ──────────────────────────────
+    if (MESSAGE_TYPES.has(evt.type)) {
+      if (evt.type === "assistant_message") {
+        // Already streamed via deltas? Don't duplicate.
+        if (lastChildIsStreamedAssistant()) return;
+        // No text and no tool use to narrate? Don't clutter the chat
+        // with "(no text)" bubbles — they're just turn-bookkeeping.
+        if (!(evt.payload.text || "").trim()) return;
+      }
+      if (evt.type === "tool_use") {
+        const t = state.toolBubbles[evt.payload.id];
+        if (t) {
+          // Treat the consolidated event as authoritative: refresh the
+          // streaming bubble's display with the fully parsed arguments.
+          // Covers the case where streaming delta chunks were missing
+          // or incomplete but the final :tool_use still has them.
+          t.name = evt.payload.name || t.name;
+          t.argsText = JSON.stringify(evt.payload.arguments || {});
+          t.el.querySelector(".body").textContent = formatToolUseBody(t.name, t.argsText);
+          return;
+        }
+      }
+      renderMessageBubble(evt);
+      scrollChat();
+    }
+  }
+
+  function ensureToolBubble(id, name) {
+    let t = state.toolBubbles[id];
+    if (t) return t;
+    const node = makeMessageNode("tool_use", "");
+    chat.appendChild(node);
+    t = { el: node, name: name || "tool", argsText: "" };
+    state.toolBubbles[id] = t;
+    node.querySelector(".body").textContent = formatToolUseBody(t.name, "");
+    return t;
+  }
+
+  function ensureStreamingBubble() {
+    if (state.streamingMsgEl) return;
+    const node = makeMessageNode("assistant", "");
+    chat.appendChild(node);
+    state.streamingMsgEl = node;
+  }
+
+  function lastChildIsStreamedAssistant() {
+    const last = chat.lastElementChild;
+    return last && last.classList.contains("assistant");
+  }
+
+  function renderMessageBubble(evt) {
+    chat.appendChild(makeMessageNode(evt.type, summarizeMessagePayload(evt)));
+  }
+
+  function makeMessageNode(type, text) {
+    const node = document.createElement("div");
+    node.className = "msg " + type;
+    const who = document.createElement("div");
+    who.className = "who";
+    who.textContent = type.replace(/_/g, " ");
+    const body = document.createElement("div");
+    body.className = "body";
+    body.textContent = text;
+    node.appendChild(who);
+    node.appendChild(body);
+    return node;
+  }
+
+  function summarizeMessagePayload(evt) {
+    const p = evt.payload || {};
+    if (evt.type === "user_message")      return p.text || "";
+    if (evt.type === "assistant_message") return p.text || "(no text)";
+    if (evt.type === "tool_use") {
+      return `${p.name}(${JSON.stringify(p.arguments || {})})`;
+    }
+    if (evt.type === "tool_result") {
+      if (p.error)  return "error: " + p.error;
+      if (p.output) return typeof p.output === "string" ? p.output : JSON.stringify(p.output);
+      return "(empty result)";
+    }
+    if (evt.type === "summary") return p.text || "[compaction]";
+    return JSON.stringify(p);
+  }
+
+  // ──── inspector event log ────
+
+  function describe(name, payload) {
+    if (name === "tokens_consumed") {
+      return `${payload.provider} · in ${payload.input_tokens} out ${payload.output_tokens}`;
+    }
+    if (name === "tool_invoked") {
+      return `${payload.tool || ""} · ${payload.outcome} · ${payload.duration_ms || 0}ms`;
+    }
+    if (name === "provider_called")    return `${payload.provider}`;
+    if (name === "provider_responded") return `${payload.provider} · ${payload.duration_ms || 0}ms`;
+    if (name === "event_appended" && payload.event) return `${payload.event.type}`;
+    if (name === "turn_started" || name === "turn_ended") return `turn ${payload.turn}`;
+    if (name === "session_started" || name === "session_ended") return payload.reason || "";
+    return "";
+  }
+
+  function addInspector(cls, text) {
+    const li = document.createElement("li");
+    li.className = cls.replace(/[^\w-]/g, "");
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = cls;
+    const meta = document.createElement("span");
+    meta.className = "meta";
+    meta.textContent = text || "";
+    li.appendChild(name);
+    li.appendChild(meta);
+    events.insertBefore(li, events.firstChild);
+    while (events.children.length > 80) events.removeChild(events.lastChild);
+  }
+
+  function scrollChat() { chat.scrollTop = chat.scrollHeight; }
+
+  // ──── block-strips ────
+  //
+  // Two views of the same Log, answering two different questions:
+  //
+  //   context  — what will be sent to the provider on the next turn.
+  //              Mutations applied. Streaming deltas (assistant_text_delta,
+  //              tool_use_*_delta, turn brackets) are collapsed into
+  //              their consolidated message / tool_use blocks. One block
+  //              per effective message the Projection emits.
+  //
+  //   timeline — the literal Log in seq order. Every appended event is
+  //              one block — deltas, brackets, mutations, consolidated
+  //              messages. Nothing is collapsed or hidden. Useful for
+  //              debugging the streaming pipeline and watching the Log
+  //              grow.
+  //
+  // The two strips are rendered stacked and update together.
+
+  function redrawStrip() {
+    const blocks = stripView === "context"
+      ? buildContextBlocks(state.log)
+      : buildTimelineBlocks(state.log);
+    drawStrip(stripEl, blocks);
+    renderDetailView("context",  buildContextBlocks(state.log));
+    renderDetailView("timeline", buildTimelineBlocks(state.log));
+    renderLegend("context",  contextLegend());
+    renderLegend("timeline", timelineLegend());
+  }
+
+  // Clicking a block in the strip jumps to the matching tab and
+  // highlights the event's row. If the block was built from a seq,
+  // the row can be scrolled into view.
+  stripEl.addEventListener("click", (e) => {
+    const rect = e.target.closest("rect");
+    if (!rect) return;
+    const seq = rect.dataset.seq;
+    if (seq === "") return;
+    switchTab(stripView, { highlightSeq: seq });
+  });
+
+  // ──── context/timeline detail rendering ────
+
+  const EVENT_TYPE_DESCRIPTIONS = {
+    user_message:              "a message the user sent",
+    assistant_message:         "consolidated assistant response (text + stop_reason + usage)",
+    tool_use:                  "the assistant asked the harness to call a tool",
+    tool_result:               "the harness executed the tool and appended the result",
+    summary:                   "synthetic replacement emitted by a :compact mutation",
+    compact:                   "mutation: hide a range of events behind a summary",
+    revert:                    "mutation: undo an earlier compact",
+    assistant_turn_started:    "streaming bracket: turn begins",
+    assistant_text_delta:      "streaming chunk of assistant text",
+    assistant_turn_completed:  "streaming bracket: turn ends successfully",
+    assistant_turn_failed:     "streaming bracket: turn ends with an error",
+    tool_use_begin:            "streaming bracket: tool-use block begins",
+    tool_use_argument_delta:   "streaming chunk of tool-use JSON arguments",
+    tool_use_end:              "streaming bracket: tool-use block ends with parsed args"
+  };
+
+  function contextLegend() {
+    return [
+      ["user_message",      "user message"],
+      ["assistant_message", "assistant (grown as deltas arrive)"],
+      ["tool_use",          "tool use"],
+      ["tool_result",       "tool result"],
+      ["summary",           "synthetic compaction summary · replaces hidden events"],
+      ["__dropped__",       "dimmed row = hidden from the projection by a :compact"]
+    ];
+  }
+
+  function timelineLegend() {
+    return [
+      ["user_message",          "user message"],
+      ["assistant_message",     "consolidated assistant message"],
+      ["assistant_text_delta",  "text delta (streaming)"],
+      ["tool_use",              "consolidated tool use"],
+      ["tool_use_argument_delta","argument delta (streaming)"],
+      ["tool_result",           "tool result"],
+      ["compact",               "mutation · hides a range of earlier events"],
+      ["summary",               "synthetic block emitted by a :compact"],
+      ["__dropped__",           "dimmed row = hidden by a :compact (still in the log)"]
+    ];
+  }
+
+  function renderLegend(which, items) {
+    const root = document.getElementById("legend-" + which);
+    root.innerHTML = "";
+    items.forEach(([type, label]) => {
+      const item = document.createElement("div");
+      item.className = "lg-item";
+      const sw = document.createElement("span");
+      sw.className = "lg-swatch";
+      if (type === "__dropped__") {
+        sw.style.background = "#cccac2";
+        sw.style.opacity = 0.35;
+        sw.style.border = "1px dashed var(--muted)";
+      } else {
+        sw.style.background = COLORS[type] || "#cccac2";
+      }
+      const name = document.createElement("span");
+      name.className = "lg-name";
+      name.textContent = type === "__dropped__" ? "dimmed" : type;
+      const desc = document.createElement("span");
+      desc.className = "lg-desc";
+      desc.textContent = "— " + label;
+      item.appendChild(sw);
+      item.appendChild(name);
+      item.appendChild(desc);
+      root.appendChild(item);
+    });
+  }
+
+  function renderDetailView(which, blocks) {
+    const list = document.getElementById("list-" + which);
+    list.innerHTML = "";
+    blocks.forEach(b => list.appendChild(makeEventRow(b)));
+  }
+
+  function makeEventRow(block, ctx) {
+    // ctx carries: compactBySeq (map seq -> compact event) so dropped
+    // rows can point back at the compact that hid them.
+    const row = document.createElement("div");
+    row.className = "evt-row";
+    if (block.seq != null) row.dataset.seq = block.seq;
+
+    // Mutation-specific treatment:
+    if (block.type === "summary")                     row.classList.add("is-summary");
+    if (block.type === "compact")                     row.classList.add("is-compact");
+    if (block.dropped)                                row.classList.add("dropped");
+
+    const bar = document.createElement("div");
+    bar.className = "evt-bar";
+    bar.style.background = COLORS[block.type] || "#cccac2";
+    if (block.dropped) bar.style.opacity = 0.35;
+
+    const seq = document.createElement("div");
+    seq.className = "evt-seq";
+    seq.textContent = block.seq != null ? "#" + block.seq : "—";
+
+    const type = document.createElement("div");
+    type.className = "evt-type";
+    const tname = document.createElement("span");
+    tname.textContent = block.type;
+    const desc  = document.createElement("span");
+    desc.className = "desc";
+    desc.textContent = (block.streaming ? "(in flight) " : "") +
+                       (EVENT_TYPE_DESCRIPTIONS[block.type] || "");
+    type.appendChild(tname);
+
+    // Tags to make the role of this row visually obvious:
+    if (block.type === "summary") {
+      const replaces = (block.replaces || []).join(", ");
+      const tag = document.createElement("span");
+      tag.className = "tag";
+      tag.textContent = "synthetic · replaces [" + replaces + "]";
+      type.appendChild(tag);
+    }
+    if (block.type === "compact") {
+      const replaces = ((block.rawPayload || {}).replaces || []).join(", ");
+      const tag = document.createElement("span");
+      tag.className = "tag tag-mutation";
+      tag.textContent = "mutation · hides [" + replaces + "]";
+      type.appendChild(tag);
+    }
+    if (block.dropped && block.hiddenBySeq != null) {
+      const tag = document.createElement("span");
+      tag.className = "tag tag-dropped";
+      tag.textContent = "replaced by #" + block.hiddenBySeq;
+      type.appendChild(tag);
+    }
+
+    type.appendChild(desc);
+
+    const body = document.createElement("div");
+    body.className = "evt-body";
+    body.textContent = describeEventPayload(block);
+    body.addEventListener("click", () => body.classList.toggle("expanded"));
+
+    row.appendChild(bar);
+    row.appendChild(seq);
+    row.appendChild(type);
+    row.appendChild(body);
+    return row;
+  }
+
+  function describeEventPayload(block) {
+    // Summary blocks in the context view are synthetic — they don't
+    // have a seq in state.log (the compact event does). Render their
+    // text directly.
+    if (block.type === "summary" && block.synthetic) {
+      return block.summaryText || "";
+    }
+
+    const raw = (block.seq != null && state.log) ? state.log.find(e => e.seq === block.seq) : null;
+    if (raw) {
+      if (raw.type === "user_message" || raw.type === "assistant_message" || raw.type === "summary") {
+        return (raw.payload.text || "") +
+               (raw.payload.usage ? "\n\n(usage: in=" + raw.payload.usage.input_tokens +
+                                    ", out=" + raw.payload.usage.output_tokens + ")" : "");
+      }
+      if (raw.type === "tool_use") return raw.payload.name + "(" + JSON.stringify(raw.payload.arguments || {}) + ")";
+      if (raw.type === "tool_result") {
+        if (raw.payload.error)  return "error: " + raw.payload.error;
+        if (raw.payload.output) return String(raw.payload.output);
+        return "(empty)";
+      }
+      if (raw.type === "compact") {
+        return 'replaces: [' + (raw.payload.replaces || []).join(", ") + ']\n' +
+               'summary : "' + (raw.payload.summary || "") + '"';
+      }
+      if (raw.type === "assistant_text_delta") return JSON.stringify(raw.payload.chunk || "");
+      if (raw.type === "tool_use_argument_delta") return raw.payload.chunk;
+      return JSON.stringify(raw.payload);
+    }
+    if (block.type === "assistant_message" && block.streaming) return "(streaming…)";
+    return "";
+  }
+
+  function drawStrip(svgEl, blocks) {
+    const total = blocks.reduce((s, b) => s + b.tokens, 0) || 1;
+    let x = 0;
+    const W = 1000, H = 18;
+    const rects = blocks.map(b => {
+      const w = (b.tokens / total) * W;
+      const rect =
+        '<rect x="' + x.toFixed(2) + '" y="2" ' +
+        'width="' + Math.max(2, w - 1).toFixed(2) + '" height="' + (H - 4) + '" ' +
+        'fill="' + (COLORS[b.type] || "#cccac2") + '" ' +
+        'opacity="' + (b.dropped ? 0.18 : 0.85) + '" ' +
+        'data-seq="' + (b.seq == null ? "" : b.seq) + '" ' +
+        'data-type="' + b.type + '">' +
+        '<title>' + b.type +
+          (b.seq != null ? " · seq " + b.seq : "") +
+          (b.streaming ? " · streaming" : "") +
+        '</title></rect>';
+      x += w;
+      return rect;
+    }).join("");
+    svgEl.innerHTML = rects;
+  }
+
+  // Timeline: one block per log event, no collapsing. But we DO
+  // annotate which events have been hidden by a later :compact so
+  // the detail view can show "→ replaced by #5" on the dropped rows.
+  function buildTimelineBlocks(log) {
+    const compactBySeq = {};
+    log.forEach(e => {
+      if (e.type === "compact") {
+        (e.payload.replaces || []).forEach(s => { compactBySeq[s] = e.seq; });
+      }
+    });
+
+    return log.map(evt => ({
+      type: evt.type,
+      tokens: tokenWidth(evt),
+      seq: evt.seq,
+      dropped: compactBySeq[evt.seq] != null,
+      hiddenBySeq: compactBySeq[evt.seq],
+      rawPayload: evt.type === "compact" ? evt.payload : null
+    }));
+  }
+
+  // Context: the projection. Apply :compact mutations. Collapse streaming
+  // into synthetic growing blocks. Drop turn brackets entirely (they're
+  // meta, not content).
+  function buildContextBlocks(log) {
+    const compactBySeq = {};
+    log.forEach(e => {
+      if (e.type === "compact") {
+        (e.payload.replaces || []).forEach(s => { compactBySeq[s] = e; });
+      }
+    });
+
+    const summaryEmittedFor = new Set();
+    const result = [];
+    let streamingAsst = null;       // { type: "assistant_message", tokens, streaming: true }
+    const streamingTools = {};      // tool_use_id -> synthetic block
+
+    log.forEach(evt => {
+      const t = evt.type;
+
+      // Mutation events and turn brackets don't appear in the projection.
+      if (t === "compact") return;
+      if (t === "assistant_turn_started" ||
+          t === "assistant_turn_completed" ||
+          t === "assistant_turn_failed") {
+        return;
+      }
+
+      // Compacted: emit the summary once, then show the original faded.
+      const compactEvt = compactBySeq[evt.seq];
+      if (compactEvt) {
+        if (!summaryEmittedFor.has(compactEvt.seq)) {
+          result.push({
+            type: "summary",
+            tokens: tokensFromString(compactEvt.payload.summary),
+            seq: compactEvt.seq,
+            synthetic: true,
+            replaces: compactEvt.payload.replaces || [],
+            summaryText: compactEvt.payload.summary
+          });
+          summaryEmittedFor.add(compactEvt.seq);
+        }
+        result.push({
+          type: t, tokens: tokenWidth(evt), seq: evt.seq,
+          dropped: true, hiddenBySeq: compactEvt.seq
+        });
+        return;
+      }
+
+      // Text deltas grow a single synthetic assistant_message block.
+      if (t === "assistant_text_delta") {
+        if (!streamingAsst) {
+          streamingAsst = { type: "assistant_message", tokens: 0, streaming: true };
+          result.push(streamingAsst);
+        }
+        streamingAsst.tokens += tokensFromString(evt.payload.chunk);
+        return;
+      }
+
+      // Tool-use streaming: begin creates the block, argument_delta grows it,
+      // end is a no-op for sizing (args already counted).
+      if (t === "tool_use_begin") {
+        const block = {
+          type: "tool_use",
+          tokens: Math.max(1, tokensFromString(evt.payload.name)),
+          seq: evt.seq,
+          streaming: true
+        };
+        streamingTools[evt.payload.tool_use_id] = block;
+        result.push(block);
+        return;
+      }
+      if (t === "tool_use_argument_delta") {
+        const block = streamingTools[evt.payload.tool_use_id];
+        if (block) block.tokens += tokensFromString(evt.payload.chunk);
+        return;
+      }
+      if (t === "tool_use_end") {
+        return;
+      }
+
+      // Consolidated assistant_message replaces any streaming block with
+      // its authoritative token size.
+      if (t === "assistant_message") {
+        if (streamingAsst) {
+          const idx = result.indexOf(streamingAsst);
+          if (idx !== -1) {
+            result[idx] = { type: t, tokens: tokenWidth(evt), seq: evt.seq };
+          }
+          streamingAsst = null;
+        } else if ((evt.payload.text || "").length > 0) {
+          result.push({ type: t, tokens: tokenWidth(evt), seq: evt.seq });
+        }
+        return;
+      }
+
+      // Consolidated tool_use replaces its streaming counterpart (by id).
+      if (t === "tool_use") {
+        const block = streamingTools[evt.payload.id];
+        if (block) {
+          const idx = result.indexOf(block);
+          if (idx !== -1) {
+            result[idx] = { type: t, tokens: tokenWidth(evt), seq: evt.seq };
+          }
+          delete streamingTools[evt.payload.id];
+        } else {
+          result.push({ type: t, tokens: tokenWidth(evt), seq: evt.seq });
+        }
+        return;
+      }
+
+      // Plain content types pass through.
+      if (t === "user_message" || t === "tool_result" || t === "summary") {
+        result.push({ type: t, tokens: tokenWidth(evt), seq: evt.seq });
+      }
+    });
+
+    return result;
+  }
+
+  function tokenWidth(evt) {
+    if (!evt) return 1;
+    const p = evt.payload || {};
+    let text = "";
+    if (typeof p.text === "string") text = p.text;
+    else if (typeof p.output === "string") text = p.output;
+    else if (typeof p.chunk === "string") text = p.chunk;
+    else text = JSON.stringify(p);
+    return Math.max(1, Math.ceil(text.length / 4));
+  }
+
+  function tokensFromString(s) {
+    return Math.max(1, Math.ceil(((s || "").length) / 4));
+  }
+})();
+</script>
+</body>
+</html>

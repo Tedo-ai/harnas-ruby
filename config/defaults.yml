@@ -1,0 +1,21 @@
+# Default provider configuration for the Harnas reference implementation.
+#
+# These defaults exist so smoke tests and other scripts work out of the box
+# without requiring every user to configure a model. Model names change over
+# time as providers deprecate old models. When that happens, update this file
+# — the spec does not name specific models.
+#
+# Override precedence (highest to lowest):
+#   1. --model CLI flag
+#   2. <PROVIDER>_MODEL environment variable (e.g. ANTHROPIC_MODEL)
+#   3. The default below
+
+anthropic:
+  model: claude-sonnet-4-5
+  api_version: "2023-06-01"
+
+openai:
+  model: gpt-5.4-mini
+
+gemini:
+  model: gemini-flash-latest
