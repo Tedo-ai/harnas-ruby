@@ -14,7 +14,9 @@ the specification as a whole.
 #### Changed
 
 - The conformance runner now supports scripted provider errors and
-  canonical compact JSON tool-stub arguments, covering 17 fixtures.
+  canonical compact JSON tool-stub arguments, covering 18 fixtures.
+- Agent conformance now covers ToolOutputCap + MarkerTail strategy
+  composition.
 - Buffered conformance scripts can now assert the projected provider
   request before returning a response.
 - Scripted streaming fixtures can now model mid-stream provider
