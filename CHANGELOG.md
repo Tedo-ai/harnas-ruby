@@ -14,7 +14,9 @@ the specification as a whole.
 #### Changed
 
 - The conformance runner now supports scripted provider errors and
-  canonical compact JSON tool-stub arguments, covering 14 fixtures.
+  canonical compact JSON tool-stub arguments, covering 17 fixtures.
+- Buffered conformance scripts can now assert the projected provider
+  request before returning a response.
 - Scripted streaming fixtures can now model mid-stream provider
   failures by appending `:assistant_turn_failed` before raising the
   provider error.
