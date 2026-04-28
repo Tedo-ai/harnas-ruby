@@ -100,7 +100,25 @@ module Harnas
       end
 
       def self.drive_inputs(loaded, scripted, inputs, streaming: false)
-        inputs.each do |text|
+        inputs.each do |input|
+          if input.is_a?(Hash) && input.key?("compact")
+            compact = input.fetch("compact")
+            loaded.session.log.append(
+              type: :compact,
+              payload: {
+                replaces: compact.fetch("replaces"),
+                summary: compact.fetch("summary")
+              }
+            )
+            next
+          end
+
+          if input.is_a?(Hash) && input.key?("revert")
+            loaded.session.log.append(type: :revert, payload: { revokes: input.fetch("revert") })
+            next
+          end
+
+          text = input.is_a?(Hash) ? input.fetch("user") : input
           loaded.session.log.append(
             type: :user_message,
             payload: Harnas::Events::UserMessage.new(text: text).to_h
