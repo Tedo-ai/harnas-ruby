@@ -84,7 +84,7 @@ module Harnas
 
         Harnas::Hooks.scoped do
           loaded.install_strategies!
-          drive_inputs(loaded, scripted, inputs, streaming: streaming)
+          loaded = drive_inputs(loaded, scripted, inputs, streaming: streaming)
         end
 
         serialize_log(loaded.session.log)
@@ -118,6 +118,15 @@ module Harnas
             next
           end
 
+          if input.is_a?(Hash) && input.key?("fork")
+            at_seq = input.fetch("fork").fetch("at_seq")
+            parent = loaded.session
+            forked = parent.fork(at_seq: at_seq)
+            verify_fork!(parent, forked, at_seq)
+            loaded = loaded.with_session(forked)
+            next
+          end
+
           text = input.is_a?(Hash) ? input.fetch("user") : input
           loaded.session.log.append(
             type: :user_message,
@@ -137,6 +146,15 @@ module Harnas
           end
           Harnas::AgentLoop.new(**loop_kwargs).run
         end
+        loaded
+      end
+
+      def self.verify_fork!(parent, forked, at_seq)
+        expected_prefix = serialize_log(parent.log.first(at_seq + 1))
+        actual_prefix   = serialize_log(forked.log.to_a)
+        raise "fork prefix mismatch" unless actual_prefix == expected_prefix
+        raise "forked_from mismatch" unless forked.metadata[:forked_from] == parent.id
+        raise "forked_at_seq mismatch" unless forked.metadata[:forked_at_seq] == at_seq
       end
 
       # Generous defaults so fixtures can reference any kind / tool /

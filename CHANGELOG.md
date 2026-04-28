@@ -14,7 +14,9 @@ the specification as a whole.
 #### Changed
 
 - The conformance runner now supports scripted provider errors and
-  canonical compact JSON tool-stub arguments, covering 19 fixtures.
+  canonical compact JSON tool-stub arguments, covering 20 fixtures.
+- Conformance inputs can now fork the active Session and verify fork
+  prefix/metadata before continuing.
 - Conformance inputs can now append explicit `:compact` and `:revert`
   Mutation Events for mutation-chain fixtures.
 - Agent conformance now covers ToolOutputCap + MarkerTail strategy
