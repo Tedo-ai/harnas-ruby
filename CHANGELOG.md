@@ -9,6 +9,8 @@ the specification as a whole.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-04-29
+
 ### Reference implementation (Ruby)
 
 #### Changed
@@ -214,5 +216,6 @@ Carryovers and deferred decisions, captured for posterity:
   wrapping, which covers most cases — the lifecycle mixin would
   be motivated by a concrete use case we haven't found yet.
 
+[0.4.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.4.0
 [0.2.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.1.0
