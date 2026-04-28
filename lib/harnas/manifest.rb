@@ -24,10 +24,18 @@ module Harnas
   module Manifest
     SUPPORTED_VERSIONS = %w[0.1].freeze
 
-    SCHEMA_PATH = File.expand_path(
-      "../../../spec/schemas/agent-manifest.schema.json",
-      __dir__
-    )
+    # Resolution order for the spec's JSON Schema:
+    #   1. HARNAS_SPEC env var pointing at a checkout of Tedo-ai/harnas
+    #   2. ../../../harnas/schemas/... (sibling clone — coordinator layout)
+    #   3. ../../../spec/schemas/...   (legacy monorepo internal layout)
+    SCHEMA_PATH =
+      if ENV["HARNAS_SPEC"]
+        File.join(ENV["HARNAS_SPEC"], "schemas", "agent-manifest.schema.json")
+      elsif File.exist?(File.expand_path("../../../harnas/schemas/agent-manifest.schema.json", __dir__))
+        File.expand_path("../../../harnas/schemas/agent-manifest.schema.json", __dir__)
+      else
+        File.expand_path("../../../spec/schemas/agent-manifest.schema.json", __dir__)
+      end
 
     class Error < StandardError; end
     class ValidationError < Error; end

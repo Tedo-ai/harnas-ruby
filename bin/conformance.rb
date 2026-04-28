@@ -24,7 +24,18 @@ $LOAD_PATH.unshift File.expand_path("../lib", __dir__)
 require "json"
 require "harnas/conformance/runner"
 
-FIXTURES_DIR = File.expand_path("../../spec/conformance/agents", __dir__)
+# Resolution order for the Harnas spec's conformance fixtures:
+#   1. HARNAS_SPEC env var pointing at a checkout of Tedo-ai/harnas
+#   2. ../harnas/conformance/agents (sibling clone — coordinator layout)
+#   3. ../../spec/conformance/agents (legacy monorepo internal layout)
+FIXTURES_DIR =
+  if ENV["HARNAS_SPEC"]
+    File.join(ENV["HARNAS_SPEC"], "conformance", "agents")
+  elsif File.directory?(File.expand_path("../../harnas/conformance/agents", __dir__))
+    File.expand_path("../../harnas/conformance/agents", __dir__)
+  else
+    File.expand_path("../../spec/conformance/agents", __dir__)
+  end
 
 unless File.directory?(FIXTURES_DIR)
   warn "no fixtures directory at #{FIXTURES_DIR}"
