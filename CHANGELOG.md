@@ -13,6 +13,15 @@ the specification as a whole.
 
 #### Changed
 
+- `Harnas::Agent#stream(text) { |delta| ... }` exposes the streaming
+  AgentLoop path from the façade and yields delta Events as they are
+  appended.
+- `harnas chat` now uses the façade streaming path so assistant text
+  deltas can be printed as they arrive.
+- `Harnas::Session#fork(at_seq:)` creates a new Session with a
+  verbatim Log prefix and `forked_from` / `forked_at_seq` metadata.
+- `Harnas::Agent#from_session(session)` creates a façade over a forked
+  Session while reusing the existing agent wiring.
 - `Harnas::Hooks` and `Harnas::Observation` are now instantiable
   Session-scoped buses. Each `Harnas::Session` owns `#hooks` and
   `#observation`, and `AgentLoop` invokes hooks through the active

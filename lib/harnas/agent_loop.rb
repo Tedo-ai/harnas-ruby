@@ -15,10 +15,14 @@ module Harnas
   # there are no pending :tool_use Events, or when max_turns is reached.
   class AgentLoop
     DEFAULT_MAX_TURNS = 10
+    STREAM_DELTA_TYPES = %i[
+      assistant_text_delta
+      tool_use_argument_delta
+    ].freeze
 
     def initialize(session:, projection:, runner: nil, max_turns: DEFAULT_MAX_TURNS, # rubocop:disable Metrics/ParameterLists
                    provider: nil, ingestor: nil, stream_provider: nil,
-                   retry_policy: nil)
+                   retry_policy: nil, on_stream_event: nil)
       raise ArgumentError, "provide either stream_provider: or (provider: and ingestor:)" \
         if stream_provider.nil? && (provider.nil? || ingestor.nil?)
 
@@ -30,6 +34,7 @@ module Harnas
       @runner          = runner
       @max_turns       = max_turns
       @retry_policy    = retry_policy || Harnas::Providers::RetryPolicy.new
+      @on_stream_event = on_stream_event
     end
 
     def run
@@ -126,7 +131,10 @@ module Harnas
 
     def run_streaming_turn(request)
       @session.hooks.invoke(:pre_provider_call, session: @session, request: request)
-      @stream_provider.call(request) { |event| @session.log.append(**event) }
+      @stream_provider.call(request) do |event|
+        appended = @session.log.append(**event)
+        @on_stream_event&.call(appended) if STREAM_DELTA_TYPES.include?(appended.type)
+      end
       @session.hooks.invoke(:post_provider_call, session: @session, response: nil)
     end
 

@@ -97,6 +97,34 @@ RSpec.describe Harnas::Session do
     end
   end
 
+  describe "#fork" do
+    it "copies events through at_seq verbatim into a new Session" do
+      session = described_class.create(metadata: { provider: "mock" })
+      session.log.append(type: :user_message, payload: { text: "one" })
+      session.log.append(
+        type: :assistant_message,
+        payload: { text: "two", stop_reason: :end_turn, usage: {} }
+      )
+      session.log.append(type: :user_message, payload: { text: "three" })
+
+      forked = session.fork(at_seq: 1)
+
+      expect(forked.id).not_to eq(session.id)
+      expect(forked.metadata).to include(
+        provider: "mock",
+        forked_from: session.id,
+        forked_at_seq: 1
+      )
+      expect(forked.log.to_a).to eq(session.log.to_a.first(2))
+    end
+
+    it "rejects an out-of-range at_seq" do
+      session = described_class.create
+      expect { session.fork(at_seq: 0) }
+        .to raise_error(ArgumentError, /out of range/)
+    end
+  end
+
   describe "persistence" do
     require "tempfile"
 

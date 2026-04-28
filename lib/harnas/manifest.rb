@@ -21,7 +21,7 @@ module Harnas
   # no hooks are registered, no network calls are made, no process-global
   # state is touched. The returned Loaded object exposes
   # #install_strategies! to perform the install step explicitly.
-  module Manifest
+  module Manifest # rubocop:disable Metrics/ModuleLength
     SUPPORTED_VERSIONS = %w[0.1].freeze
 
     # Resolution order for the spec's JSON Schema:
@@ -81,6 +81,7 @@ module Harnas
         session: Harnas::Session.create(metadata: { manifest_name: manifest["name"] }),
         projection: provider_bundle[:projection],
         provider: provider_bundle[:provider],
+        stream_provider: provider_bundle[:stream_provider],
         ingestor: provider_bundle[:ingestor],
         registry: registry,
         strategies: strategies
@@ -89,18 +90,19 @@ module Harnas
 
     # A prepared agent. Side-effect-free until #install_strategies! is called.
     class Loaded
-      attr_reader :name, :session, :projection, :provider, :ingestor,
+      attr_reader :name, :session, :projection, :provider, :stream_provider, :ingestor,
                   :registry, :strategies
 
-      def initialize(name:, session:, projection:, provider:, ingestor:,
-                     registry:, strategies:)
-        @name       = name
-        @session    = session
-        @projection = projection
-        @provider   = provider
-        @ingestor   = ingestor
-        @registry   = registry
-        @strategies = strategies
+      def initialize(name:, session:, projection:, provider:, ingestor:, # rubocop:disable Metrics/ParameterLists
+                     registry:, strategies:, stream_provider: nil)
+        @name            = name
+        @session         = session
+        @projection      = projection
+        @provider        = provider
+        @stream_provider = stream_provider
+        @ingestor        = ingestor
+        @registry        = registry
+        @strategies      = strategies
       end
 
       # Install every manifest-declared strategy onto this Loaded Session.
@@ -114,6 +116,19 @@ module Harnas
       # Harnas::Tools::Runner takes the registry positionally.
       def runner
         Harnas::Tools::Runner.new(@registry)
+      end
+
+      def with_session(session)
+        self.class.new(
+          name: @name,
+          session: session,
+          projection: @projection,
+          provider: @provider,
+          stream_provider: @stream_provider,
+          ingestor: @ingestor,
+          registry: @registry,
+          strategies: @strategies
+        )
       end
     end
 
@@ -140,27 +155,33 @@ module Harnas
       "anthropic" => {
         projection: "harnas/projections/anthropic",
         provider: "harnas/providers/anthropic",
+        stream_provider: "harnas/providers/anthropic_stream_live",
         ingestor: "harnas/ingestors/anthropic",
         projection_class: "Harnas::Projections::Anthropic",
         provider_class: "Harnas::Providers::Anthropic",
+        stream_provider_class: "Harnas::Providers::AnthropicStreamLive",
         ingestor_class: "Harnas::Ingestors::Anthropic",
         api_key_required: true
       },
       "openai" => {
         projection: "harnas/projections/openai",
         provider: "harnas/providers/openai",
+        stream_provider: "harnas/providers/openai_stream_live",
         ingestor: "harnas/ingestors/openai",
         projection_class: "Harnas::Projections::OpenAI",
         provider_class: "Harnas::Providers::OpenAI",
+        stream_provider_class: "Harnas::Providers::OpenAIStreamLive",
         ingestor_class: "Harnas::Ingestors::OpenAI",
         api_key_required: true
       },
       "gemini" => {
         projection: "harnas/projections/gemini",
         provider: "harnas/providers/gemini",
+        stream_provider: "harnas/providers/gemini_stream_live",
         ingestor: "harnas/ingestors/gemini",
         projection_class: "Harnas::Projections::Gemini",
         provider_class: "Harnas::Providers::Gemini",
+        stream_provider_class: "Harnas::Providers::GeminiStreamLive",
         ingestor_class: "Harnas::Ingestors::Gemini",
         api_key_required: true
       },
@@ -267,15 +288,27 @@ module Harnas
       require info[:projection]
       require info[:provider]
       require info[:ingestor]
+      require info[:stream_provider] if info[:stream_provider]
 
-      projection_klass = Object.const_get(info[:projection_class])
-      provider_klass   = Object.const_get(info[:provider_class])
-      ingestor_klass   = Object.const_get(info[:ingestor_class])
+      classes          = provider_classes(info)
+      api_keys         = resolve_api_keys(api_keys)
 
       {
-        projection: build_projection_instance(projection_klass, provider_spec, registry, system),
-        provider: build_provider_instance(provider_klass, kind, info, resolve_api_keys(api_keys)),
-        ingestor: ingestor_klass.new
+        projection: build_projection_instance(classes[:projection], provider_spec, registry,
+                                              system),
+        provider: build_provider_instance(classes[:provider], kind, info, api_keys),
+        stream_provider: build_stream_provider_instance(classes[:stream_provider], kind, info,
+                                                        api_keys),
+        ingestor: classes[:ingestor].new
+      }
+    end
+
+    def self.provider_classes(info)
+      {
+        projection: Object.const_get(info[:projection_class]),
+        provider: Object.const_get(info[:provider_class]),
+        stream_provider: stream_provider_class(info),
+        ingestor: Object.const_get(info[:ingestor_class])
       }
     end
 
@@ -298,6 +331,19 @@ module Harnas
       else
         provider_klass.new
       end
+    end
+
+    def self.stream_provider_class(info)
+      class_name = info[:stream_provider_class]
+      return nil unless class_name
+
+      Object.const_get(class_name)
+    end
+
+    def self.build_stream_provider_instance(stream_klass, kind, info, api_keys)
+      return nil if stream_klass.nil?
+
+      build_provider_instance(stream_klass, kind, info, api_keys)
     end
 
     def self.resolve_api_keys(api_keys)

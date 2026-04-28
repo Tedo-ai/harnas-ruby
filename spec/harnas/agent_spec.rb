@@ -3,6 +3,7 @@
 require "harnas/agent"
 require "harnas/manifest"
 require "harnas/conformance/scripted_provider"
+require "harnas/conformance/scripted_stream_provider"
 
 RSpec.describe Harnas::Agent do
   let(:mock_manifest) do
@@ -94,6 +95,64 @@ RSpec.describe Harnas::Agent do
       agent.chat("hi again")
       expect(agent.session.hooks.handlers[:pre_projection].size).to eq(after_first)
       expect(Harnas::Hooks.handlers[:pre_projection]).to be_empty
+    end
+  end
+
+  describe "#stream" do
+    it "yields text delta Events as they are appended" do
+      agent = described_class.from_manifest(mock_manifest)
+      agent.use_stream_provider(
+        Harnas::Conformance::ScriptedStreamProvider.new(
+          streams: [
+            [
+              { "type" => "assistant_turn_started",
+                "payload" => { "turn_id" => "turn_1" } },
+              { "type" => "assistant_text_delta",
+                "payload" => { "turn_id" => "turn_1", "chunk" => "he" } },
+              { "type" => "assistant_text_delta",
+                "payload" => { "turn_id" => "turn_1", "chunk" => "llo" } },
+              { "type" => "assistant_turn_completed",
+                "payload" => { "turn_id" => "turn_1", "stop_reason" => "end_turn",
+                               "usage" => { "input_tokens" => 1, "output_tokens" => 1 } } },
+              { "type" => "assistant_message",
+                "payload" => { "text" => "hello", "stop_reason" => "end_turn",
+                               "usage" => { "input_tokens" => 1, "output_tokens" => 1 } } }
+            ]
+          ]
+        )
+      )
+
+      yielded = []
+      response = agent.stream("hi") { |event| yielded << event }
+
+      expect(yielded.map(&:type)).to eq(%i[assistant_text_delta assistant_text_delta])
+      expect(yielded.map { |event| event.payload[:chunk] }.join).to eq("hello")
+      expect(response.text).to eq("hello")
+    end
+
+    it "falls back to buffered chat when no stream provider is configured" do
+      agent = build_agent(["buffered"])
+      yielded = []
+      response = agent.stream("hi") { |event| yielded << event }
+
+      expect(yielded).to be_empty
+      expect(response.text).to eq("buffered")
+    end
+  end
+
+  describe "#from_session" do
+    it "continues execution from a supplied Session" do
+      agent = build_agent(%w[first second])
+      agent.chat("one")
+      forked = agent.session.fork(at_seq: 0)
+      forked_agent = agent.from_session(forked)
+
+      response = forked_agent.chat("retry")
+
+      expect(response.text).to eq("second")
+      expect(forked_agent.session).to be(forked)
+      expect(forked_agent.log.map { |event| event.payload[:text] }.compact)
+        .to eq(%w[one retry second])
     end
   end
 

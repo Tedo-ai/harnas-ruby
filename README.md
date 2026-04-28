@@ -48,6 +48,14 @@ bundle exec bin/harnas chat examples/05-codebase-qa/manifest.json
 - Manifest tools whose handler starts with `harnas.builtin.` are
   resolved automatically from `Harnas::Tools::Builtin.handlers`.
 
+`Harnas::Agent` also exposes a streaming façade:
+
+```ruby
+agent.stream("hello") do |delta|
+  print delta.payload[:chunk] if delta.type == :assistant_text_delta
+end
+```
+
 ## Runtime Scope
 
 Each `Harnas::Session` owns its own hook and observation buses:
@@ -57,6 +65,14 @@ same process without inheriting each other's handlers or subscribers.
 
 The legacy `Harnas::Hooks.*` and `Harnas::Observation.*` APIs remain
 available as process-global compatibility wrappers for v0.3.
+
+Sessions can be forked for rewind-and-retry flows:
+
+```ruby
+forked = agent.session.fork(at_seq: 12)
+retry_agent = agent.from_session(forked)
+retry_agent.chat("try a different approach")
+```
 
 ## Live providers
 

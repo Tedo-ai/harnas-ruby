@@ -67,11 +67,7 @@ module Harnas
     # a Response value derived from the final :assistant_message.
     def chat(text)
       ensure_strategies_installed!
-
-      @loaded.session.log.append(
-        type: :user_message,
-        payload: Events::UserMessage.new(text: text).to_h
-      )
+      append_user_message(text)
 
       AgentLoop.new(
         session: @loaded.session,
@@ -80,6 +76,27 @@ module Harnas
         provider: @loaded.provider,
         ingestor: @loaded.ingestor,
         max_turns: @max_turns
+      ).run
+
+      build_response
+    end
+
+    # Append a user message and drive the streaming AgentLoop path,
+    # yielding each delta Event as soon as it is appended to the Log.
+    # Manifests without a streaming provider fall back to #chat.
+    def stream(text, &block)
+      return chat(text) unless @loaded.stream_provider
+
+      ensure_strategies_installed!
+      append_user_message(text)
+
+      AgentLoop.new(
+        session: @loaded.session,
+        projection: @loaded.projection,
+        runner: @loaded.runner,
+        stream_provider: @loaded.stream_provider,
+        max_turns: @max_turns,
+        on_stream_event: block
       ).run
 
       build_response
@@ -106,6 +123,15 @@ module Harnas
       self
     end
 
+    def use_stream_provider(stream_provider)
+      @loaded.instance_variable_set(:@stream_provider, stream_provider)
+      self
+    end
+
+    def from_session(session)
+      self.class.new(loaded: @loaded.with_session(session), max_turns: @max_turns)
+    end
+
     # Uninstall every manifest-declared strategy. Safe to call repeatedly.
     def shutdown
       return if @installed_handlers.nil?
@@ -122,6 +148,13 @@ module Harnas
       return unless @installed_handlers.nil?
 
       @installed_handlers = @loaded.install_strategies!
+    end
+
+    def append_user_message(text)
+      @loaded.session.log.append(
+        type: :user_message,
+        payload: Events::UserMessage.new(text: text).to_h
+      )
     end
 
     def build_response

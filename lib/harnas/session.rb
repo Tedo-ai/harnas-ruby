@@ -46,6 +46,26 @@ module Harnas
       strategy.install(self, **config)
     end
 
+    def fork(at_seq:)
+      raise ArgumentError, "at_seq must be an Integer" unless at_seq.is_a?(Integer)
+      raise ArgumentError, "at_seq out of range" if at_seq.negative? || at_seq >= log.size
+
+      forked_log = Log.new
+      log.each.take(at_seq + 1).each do |event|
+        forked_log.send(
+          :restore,
+          seq: event.seq,
+          id: event.id,
+          type: event.type,
+          payload: event.payload
+        )
+      end
+
+      self.class.create(
+        metadata: metadata.merge(forked_from: id, forked_at_seq: at_seq)
+      ).with(log: forked_log)
+    end
+
     def ==(other)
       other.is_a?(self.class) &&
         id == other.id &&
