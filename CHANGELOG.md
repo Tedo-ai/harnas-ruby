@@ -13,6 +13,8 @@ the specification as a whole.
 
 #### Changed
 
+- The conformance runner now supports scripted provider errors and
+  canonical compact JSON tool-stub arguments, covering 13 fixtures.
 - `Harnas::Agent#stream(text) { |delta| ... }` exposes the streaming
   AgentLoop path from the façade and yields delta Events as they are
   appended.

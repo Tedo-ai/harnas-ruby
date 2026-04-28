@@ -133,12 +133,32 @@ module Harnas
 
       # Any tool handler name resolves to a stub that echoes its
       # arguments in the normative format defined by
-      # spec/conformance/README.md (compact JSON for the args). Fixtures
-      # whose agent loop invokes tools get deterministic, language-
-      # neutral output.
+      # spec/conformance/README.md (canonical compact JSON for the args).
+      # Fixtures whose agent loop invokes tools get deterministic,
+      # language-neutral output.
       def self.conformance_tool_handlers
         Hash.new do |_, name|
-          ->(args) { "[conformance stub: #{name}(#{JSON.generate(args)})]" }
+          next ->(_args) { raise "conformance tool error" } if name == "conformance.raise_error"
+
+          ->(args) { "[conformance stub: #{name}(#{canonical_json(args)})]" }
+        end
+      end
+
+      def self.canonical_json(value)
+        JSON.generate(canonical_json_value(value))
+      end
+
+      def self.canonical_json_value(value)
+        case value
+        when Hash
+          value.keys.map(&:to_s).sort.each_with_object({}) do |key, out|
+            source_key = value.key?(key) ? key : key.to_sym
+            out[key] = canonical_json_value(value[source_key])
+          end
+        when Array
+          value.map { |item| canonical_json_value(item) }
+        else
+          value
         end
       end
 

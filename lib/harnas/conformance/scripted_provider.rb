@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../observation"
+require_relative "../providers/errors"
 
 module Harnas
   module Conformance
@@ -26,6 +27,7 @@ module Harnas
 
         @call_count += 1
         response = @responses.shift
+        raise_error(response["error"]) if response.is_a?(Hash) && response.key?("error")
 
         Observation.emit(:provider_called, provider: :scripted, request: request)
         Observation.emit(
@@ -40,6 +42,14 @@ module Harnas
 
       def remaining_responses
         @responses.size
+      end
+
+      private
+
+      def raise_error(error)
+        status = error.fetch("status")
+        body   = error.fetch("body")
+        raise Harnas::Providers::HTTPError.new(status, body)
       end
     end
   end
