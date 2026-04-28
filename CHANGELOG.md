@@ -14,7 +14,12 @@ the specification as a whole.
 #### Changed
 
 - The conformance runner now supports scripted provider errors and
-  canonical compact JSON tool-stub arguments, covering 13 fixtures.
+  canonical compact JSON tool-stub arguments, covering 14 fixtures.
+- Scripted streaming fixtures can now model mid-stream provider
+  failures by appending `:assistant_turn_failed` before raising the
+  provider error.
+- Added a scheduled GitHub Actions workflow for weekly live-provider
+  smoke tests against Anthropic, OpenAI, and Gemini.
 - `Harnas::Agent#stream(text) { |delta| ... }` exposes the streaming
   AgentLoop path from the façade and yields delta Events as they are
   appended.

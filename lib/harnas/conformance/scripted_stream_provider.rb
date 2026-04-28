@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "harnas/providers/errors"
+
 module Harnas
   module Conformance
     class ScriptedStreamProvider
@@ -11,10 +13,34 @@ module Harnas
 
       def call(_request)
         stream = @streams.shift or raise Exhausted, "no more scripted streams"
-        stream.each { |event| yield normalize_event(event) }
+        stream.each do |event|
+          if event.key?("error")
+            yield failed_event(event.fetch("error"))
+            raise_error(event.fetch("error"))
+          end
+
+          yield normalize_event(event)
+        end
       end
 
       private
+
+      def failed_event(error)
+        {
+          type: :assistant_turn_failed,
+          payload: {
+            turn_id: error.fetch("turn_id"),
+            error: error.fetch("message")
+          }
+        }
+      end
+
+      def raise_error(error)
+        raise Harnas::Providers::HTTPError.new(
+          error.fetch("status"),
+          error.fetch("body")
+        )
+      end
 
       def normalize_event(event)
         type = event.fetch("type").to_sym
