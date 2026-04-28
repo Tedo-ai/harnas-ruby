@@ -70,6 +70,10 @@ module Harnas
       end
 
       def self.run_agent(manifest, script, inputs, streaming: false)
+        serialize_log(run_session(manifest, script, inputs, streaming: streaming).log)
+      end
+
+      def self.run_session(manifest, script, inputs, streaming: false, session: nil)
         scripted = if streaming
                      ScriptedStreamProvider.new(streams: script)
                    else
@@ -81,13 +85,14 @@ module Harnas
           tool_handlers: conformance_tool_handlers,
           strategy_handlers: conformance_strategy_handlers
         )
+        loaded = loaded.with_session(session) if session
 
         Harnas::Hooks.scoped do
           loaded.install_strategies!
           loaded = drive_inputs(loaded, scripted, inputs, streaming: streaming)
         end
 
-        serialize_log(loaded.session.log)
+        loaded.session
       end
 
       def self.load_provider_script(dir)
@@ -101,52 +106,72 @@ module Harnas
 
       def self.drive_inputs(loaded, scripted, inputs, streaming: false)
         inputs.each do |input|
-          if input.is_a?(Hash) && input.key?("compact")
-            compact = input.fetch("compact")
-            loaded.session.log.append(
-              type: :compact,
-              payload: {
-                replaces: compact.fetch("replaces"),
-                summary: compact.fetch("summary")
-              }
-            )
-            next
-          end
-
-          if input.is_a?(Hash) && input.key?("revert")
-            loaded.session.log.append(type: :revert, payload: { revokes: input.fetch("revert") })
-            next
-          end
-
-          if input.is_a?(Hash) && input.key?("fork")
-            at_seq = input.fetch("fork").fetch("at_seq")
-            parent = loaded.session
-            forked = parent.fork(at_seq: at_seq)
-            verify_fork!(parent, forked, at_seq)
-            loaded = loaded.with_session(forked)
-            next
-          end
-
-          text = input.is_a?(Hash) ? input.fetch("user") : input
-          loaded.session.log.append(
-            type: :user_message,
-            payload: Harnas::Events::UserMessage.new(text: text).to_h
-          )
-          loop_kwargs = {
-            session: loaded.session,
-            projection: loaded.projection,
-            runner: loaded.runner,
-            max_turns: 3
-          }
-          if streaming
-            loop_kwargs[:stream_provider] = scripted
-          else
-            loop_kwargs[:provider] = scripted
-            loop_kwargs[:ingestor] = loaded.ingestor
-          end
-          Harnas::AgentLoop.new(**loop_kwargs).run
+          loaded = drive_input(loaded, scripted, input, streaming: streaming)
         end
         loaded
+      end
+
+      def self.drive_input(loaded, scripted, input, streaming: false)
+        if input.is_a?(Hash) && input.key?("compact")
+          return append_compact(loaded, input.fetch("compact"))
+        end
+        if input.is_a?(Hash) && input.key?("revert")
+          return append_revert(loaded, input.fetch("revert"))
+        end
+        if input.is_a?(Hash) && input.key?("fork")
+          return fork_loaded(loaded, input.fetch("fork").fetch("at_seq"))
+        end
+
+        append_user_message(loaded, input)
+        run_loop(loaded, scripted, streaming: streaming)
+        loaded
+      end
+
+      def self.append_compact(loaded, compact)
+        loaded.session.log.append(
+          type: :compact,
+          payload: {
+            replaces: compact.fetch("replaces"),
+            summary: compact.fetch("summary")
+          }
+        )
+        loaded
+      end
+
+      def self.append_revert(loaded, revokes)
+        loaded.session.log.append(type: :revert, payload: { revokes: revokes })
+        loaded
+      end
+
+      def self.fork_loaded(loaded, at_seq)
+        parent = loaded.session
+        forked = parent.fork(at_seq: at_seq)
+        verify_fork!(parent, forked, at_seq)
+        loaded.with_session(forked)
+      end
+
+      def self.append_user_message(loaded, input)
+        text = input.is_a?(Hash) ? input.fetch("user") : input
+        loaded.session.log.append(
+          type: :user_message,
+          payload: Harnas::Events::UserMessage.new(text: text).to_h
+        )
+      end
+
+      def self.run_loop(loaded, scripted, streaming: false)
+        loop_kwargs = {
+          session: loaded.session,
+          projection: loaded.projection,
+          runner: loaded.runner,
+          max_turns: 3
+        }
+        if streaming
+          loop_kwargs[:stream_provider] = scripted
+        else
+          loop_kwargs[:provider] = scripted
+          loop_kwargs[:ingestor] = loaded.ingestor
+        end
+        Harnas::AgentLoop.new(**loop_kwargs).run
       end
 
       def self.verify_fork!(parent, forked, at_seq)

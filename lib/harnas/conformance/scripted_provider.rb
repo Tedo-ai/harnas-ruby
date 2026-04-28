@@ -27,7 +27,9 @@ module Harnas
 
         @call_count += 1
         response = @responses.shift
-        response = unwrap_expected_response(response, request) if response.is_a?(Hash) && response.key?("expect_request")
+        if response.is_a?(Hash) && response.key?("expect_request")
+          response = unwrap_expected_response(response, request)
+        end
         raise_error(response["error"]) if response.is_a?(Hash) && response.key?("error")
 
         Observation.emit(:provider_called, provider: :scripted, request: request)
@@ -51,8 +53,10 @@ module Harnas
         expected = entry.fetch("expect_request")
         actual   = normalize(request)
         unless actual == normalize(expected)
+          message = "request does not match expected: #{actual.inspect} != " \
+                    "#{normalize(expected).inspect}"
           raise Harnas::Providers::FixtureError,
-                "request does not match expected: #{actual.inspect} != #{normalize(expected).inspect}"
+                message
         end
         entry.fetch("response")
       end

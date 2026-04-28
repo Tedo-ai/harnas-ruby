@@ -15,6 +15,10 @@ the specification as a whole.
 
 - The conformance runner now supports scripted provider errors and
   canonical compact JSON tool-stub arguments, covering 20 fixtures.
+- Added `bin/conformance_roundtrip.rb` for Session JSONL
+  cross-language round-trip conformance. The Ruby implementation can
+  now save phase-1 Sessions and load Sessions produced by Python or Go
+  before continuing phase 2.
 - Conformance inputs can now fork the active Session and verify fork
   prefix/metadata before continuing.
 - Conformance inputs can now append explicit `:compact` and `:revert`
