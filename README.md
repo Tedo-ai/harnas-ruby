@@ -5,7 +5,7 @@ a specification for LLM agent harnesses. Passes 7/7 conformance fixtures
 byte-identically with the spec; live providers Anthropic + OpenAI + Gemini;
 550 RSpec examples; rubocop clean.
 
-**Version 0.1.0** (2026-04-28). Tracks Harnas spec 0.1.0.
+**Version 0.2.0** (2026-04-28). Tracks Harnas spec 0.2.0.
 
 ## What's in here
 
@@ -20,7 +20,7 @@ config/defaults.yml          — per-provider model defaults
 examples/                    — 5 runnable example agents
 manifests/                   — example agent manifests (declarative JSON)
 Gemfile / Gemfile.lock       — dependencies
-CHANGELOG.md                 — 0.1.0 release notes
+CHANGELOG.md                 — release notes
 LICENSE                      — MIT
 ```
 
@@ -77,11 +77,15 @@ bundle exec ruby examples/05-codebase-qa/run.rb --provider gemini "..."
 Each run auto-saves to `examples/05-codebase-qa/runs/<provider>-<timestamp>.jsonl`
 (gitignored) so the Log can be inspected or reloaded.
 
-## What's in 0.1.0
+## What's in 0.2.0
 
-The full feature set landed for v0.1.0 is enumerated in [`CHANGELOG.md`](CHANGELOG.md).
+The full feature set landed for v0.2.0 is enumerated in [`CHANGELOG.md`](CHANGELOG.md).
 Highlights:
 
+- Manifest-driven CLI (`bin/harnas chat` and `bin/harnas run`).
+- Manifest API key resolution from `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+  and `GEMINI_API_KEY`.
+- Agent-level streaming conformance fixture replay; 7/7 fixtures.
 - All three live providers (buffered + streaming) with full tool-registry
   parity. One canonical Log; three wire shapes.
 - Eight built-in tools (read_file, write_file, edit_file, list_dir, glob,

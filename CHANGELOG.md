@@ -9,6 +9,8 @@ the specification as a whole.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-04-28
+
 ### Reference implementation (Ruby)
 
 #### Changed
@@ -145,28 +147,17 @@ multi-turn tool-using agent workload.
 - 28 devlog entries
 - 30 spec sections in `spec/`
 
-## What's next: 0.2
+## What's next: 0.3
 
 Carryovers and deferred decisions, captured for posterity:
 
-- **Streaming conformance fixtures.** Streaming delta events exist
-  but are not under fixture coverage. The retry-policy refactor
-  in `AgentLoop` touches both buffered and streaming paths;
-  streaming has zero live testing.
-- **Second implementation.** A Python (or Go, or TS) port that
-  passes the five fixtures is the largest remaining credibility
-  move. The spec is now substantive enough that a port is real
-  engineering, not a stub.
+- **Production deployment safety.** `Harnas::Hooks` and
+  `Harnas::Observation` should become per-Session instances so
+  concurrent agents in one process cannot inherit each other's
+  strategies or subscribers.
 - **MCP client.** Spec already positions MCP as composable; no
   reference implementation yet. Once landed, every existing MCP
   server becomes a Harnas tool source.
-- **Real CLI.** `bin/chat.rb` exists but is Anthropic-only and
-  echo-tool-hardcoded. A `harnas chat <manifest>` and
-  `harnas run <manifest> --input ...` would replace
-  `bundle exec ruby examples/...` ergonomics.
-- **Env-var API key resolution.** `api_keys:` is still passed
-  explicitly everywhere; a default of `ENV["ANTHROPIC_API_KEY"]`
-  etc. would make demos and deployment cleaner.
 - **`:tool_output_truncate` mutation** for tool-chain-preserving
   truncation. `ToolOutputCap` collapses a tool pair into a
   user-role summary today; a future mutation type could preserve
@@ -177,4 +168,5 @@ Carryovers and deferred decisions, captured for posterity:
   wrapping, which covers most cases — the lifecycle mixin would
   be motivated by a concrete use case we haven't found yet.
 
-[0.1.0]: https://github.com/Tedo-ai/harnas/releases/tag/v0.1.0
+[0.2.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.2.0
+[0.1.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.1.0
