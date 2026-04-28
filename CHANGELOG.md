@@ -19,6 +19,9 @@ the specification as a whole.
   cross-language round-trip conformance. The Ruby implementation can
   now save phase-1 Sessions and load Sessions produced by Python or Go
   before continuing phase 2.
+- Added property-style RSpec coverage for mutation idempotence,
+  projection purity, dense seq assignment, fork prefixes, and
+  compact/revert composition.
 - Conformance inputs can now fork the active Session and verify fork
   prefix/metadata before continuing.
 - Conformance inputs can now append explicit `:compact` and `:revert`
