@@ -174,4 +174,48 @@ RSpec.describe Harnas::CLI do
       expect(stderr).to include("provider error: HTTP 503: unavailable")
     end
   end
+
+  it "inspects a saved session as a compact timeline" do
+    Dir.mktmpdir("harnas-cli-") do |dir|
+      session = Harnas::Session.new(id: "ses_inspect", metadata: { label: "demo" })
+      session.log.append(type: :user_message, payload: { text: "hello" })
+      session.log.append(
+        type: :assistant_message,
+        payload: { text: "hi there", stop_reason: :end_turn, usage: {} }
+      )
+      path = File.join(dir, "session.jsonl")
+      session.save(path)
+
+      status, stdout, stderr = run_cli(["inspect", path])
+
+      expect(status).to eq(0)
+      expect(stderr).to eq("")
+      expect(stdout).to include("session ses_inspect")
+      expect(stdout).to include("metadata {\"label\":\"demo\"}")
+      expect(stdout).to include("counts {\"assistant_message\":1,\"user_message\":1}")
+      expect(stdout).to include("0  user_message")
+      expect(stdout).to include("1  assistant_message")
+    end
+  end
+
+  it "inspects a saved session as JSON" do
+    Dir.mktmpdir("harnas-cli-") do |dir|
+      session = Harnas::Session.new(id: "ses_json", metadata: {})
+      session.log.append(type: :user_message, payload: { text: "hello" })
+      path = File.join(dir, "session.jsonl")
+      session.save(path)
+
+      status, stdout, _stderr = run_cli(["inspect", path, "--json"])
+      parsed = JSON.parse(stdout)
+
+      expect(status).to eq(0)
+      expect(parsed.fetch("session").fetch("id")).to eq("ses_json")
+      expect(parsed.fetch("event_counts")).to eq("user_message" => 1)
+      expect(parsed.fetch("events").first).to include(
+        "seq" => 0,
+        "type" => "user_message",
+        "summary" => "hello"
+      )
+    end
+  end
 end

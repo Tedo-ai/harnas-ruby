@@ -9,6 +9,14 @@ the specification as a whole.
 
 ## [Unreleased]
 
+### Reference implementation (Ruby)
+
+#### Added
+
+- Added `harnas inspect <session.jsonl>` for operator-friendly
+  inspection of persisted Sessions, with a compact timeline by default
+  and `--json` for machine-readable output.
+
 ## [0.4.0] — 2026-04-29
 
 ### Reference implementation (Ruby)

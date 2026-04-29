@@ -6,7 +6,9 @@ require "optparse"
 require "time"
 
 require "harnas/agent"
+require "harnas/cli/inspector"
 require "harnas/config"
+require "harnas/session"
 require "harnas/tools/builtin"
 
 module Harnas
@@ -27,7 +29,8 @@ module Harnas
       command = @argv.shift
       case command
       when "chat" then run_chat
-      when "run"  then run_once
+      when "inspect" then run_inspect
+      when "run" then run_once
       else
         @stderr.puts global_usage
         EXIT_USAGE
@@ -65,6 +68,18 @@ module Harnas
       EXIT_SUCCESS
     end
 
+    def run_inspect
+      options = parse_inspect_options
+      session = Harnas::Session.load(options.fetch(:session_path))
+      inspector = Inspector.new(session)
+      if options[:json]
+        @stdout.puts JSON.pretty_generate(inspector.to_h)
+      else
+        @stdout.print inspector.to_text
+      end
+      EXIT_SUCCESS
+    end
+
     def run_once
       options = parse_run_options
       raise OptionParser::MissingArgument, "--input" if options[:input].to_s.empty?
@@ -98,6 +113,17 @@ module Harnas
       options.merge(manifest_path: @argv.shift || raise(OptionParser::MissingArgument, "manifest"))
     end
 
+    def parse_inspect_options
+      options = { json: false }
+      parser = OptionParser.new do |opts|
+        opts.banner = "usage: harnas inspect <session.jsonl> [--json]"
+        opts.on("--json", "Print machine-readable inspection JSON") { options[:json] = true }
+        opts.on("-h", "--help") { print_help(opts) }
+      end
+      parser.parse!(@argv)
+      options.merge(session_path: @argv.shift || raise(OptionParser::MissingArgument, "session"))
+    end
+
     def parse_run_options
       options = default_options
       parser = OptionParser.new do |opts|
@@ -120,9 +146,7 @@ module Harnas
       exit EXIT_SUCCESS
     end
 
-    def default_options
-      { provider: nil, model: nil, input: nil }
-    end
+    def default_options = { provider: nil, model: nil, input: nil }
 
     def build_agent(options)
       manifest = load_manifest(options)
@@ -134,11 +158,8 @@ module Harnas
     end
 
     def api_keys
-      {
-        anthropic: @env["ANTHROPIC_API_KEY"],
-        openai: @env["OPENAI_API_KEY"],
-        gemini: @env["GEMINI_API_KEY"]
-      }
+      { anthropic: @env["ANTHROPIC_API_KEY"], openai: @env["OPENAI_API_KEY"],
+        gemini: @env["GEMINI_API_KEY"] }
     end
 
     def load_manifest(options)
@@ -222,6 +243,7 @@ module Harnas
       <<~TEXT
         usage:
           harnas chat <manifest> [--provider KIND] [--model MODEL]
+          harnas inspect <session.jsonl> [--json]
           harnas run <manifest> --input TEXT [--provider KIND] [--model MODEL]
       TEXT
     end
