@@ -16,6 +16,10 @@ the specification as a whole.
 - Added `harnas inspect <session.jsonl>` for operator-friendly
   inspection of persisted Sessions, with a compact timeline by default
   and `--json` for machine-readable output.
+- Added `harnas fork`, `harnas diff`, and `harnas project` for
+  persisted-Session operator workflows: fork a Log prefix, pinpoint
+  structural divergence, and render a provider request from a saved
+  Log slice without making a provider call.
 
 ## [0.4.0] — 2026-04-29
 

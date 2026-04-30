@@ -7,12 +7,17 @@ require "time"
 
 require "harnas/agent"
 require "harnas/cli/inspector"
+require "harnas/cli/session_commands"
+require "harnas/cli/usage"
 require "harnas/config"
 require "harnas/session"
 require "harnas/tools/builtin"
 
 module Harnas
   class CLI
+    include SessionCommands
+    include Usage
+
     EXIT_SUCCESS = 0
     EXIT_USAGE = 1
     EXIT_PROVIDER_ERROR = 2
@@ -29,13 +34,17 @@ module Harnas
       command = @argv.shift
       case command
       when "chat" then run_chat
+      when "diff" then run_diff
+      when "fork" then run_fork
       when "inspect" then run_inspect
+      when "project" then run_project
       when "run" then run_once
       else
         @stderr.puts global_usage
         EXIT_USAGE
       end
-    rescue Harnas::Manifest::Error, Harnas::Config::ConfigError, OptionParser::ParseError => e
+    rescue Harnas::Manifest::Error, Harnas::Config::ConfigError, OptionParser::ParseError,
+           ArgumentError => e
       @stderr.puts "error: #{e.message}"
       EXIT_USAGE
     end
@@ -237,15 +246,6 @@ module Harnas
 
     def slug(name)
       name.to_s.downcase.gsub(/[^a-z0-9]+/, "-").gsub(/\A-|-+\z/, "")
-    end
-
-    def global_usage
-      <<~TEXT
-        usage:
-          harnas chat <manifest> [--provider KIND] [--model MODEL]
-          harnas inspect <session.jsonl> [--json]
-          harnas run <manifest> --input TEXT [--provider KIND] [--model MODEL]
-      TEXT
     end
   end
 end

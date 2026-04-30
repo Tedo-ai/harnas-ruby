@@ -34,6 +34,7 @@ bundle exec bin/conformance.rb  # 20/20 fixtures
 bundle exec bin/harnas run examples/01-hello-world/manifest.json --input "hello"
 bundle exec bin/harnas chat examples/05-codebase-qa/manifest.json
 bundle exec bin/harnas inspect ~/.harnas/runs/<session>.jsonl
+bundle exec bin/harnas diff run-a.jsonl run-b.jsonl
 ```
 
 `bin/harnas` is the manifest-driven CLI:
@@ -51,6 +52,14 @@ bundle exec bin/harnas inspect ~/.harnas/runs/<session>.jsonl
 - `harnas inspect <session.jsonl>` loads a saved Session and prints a
   compact metadata summary, event counts, and timeline. Use `--json`
   for machine-readable output.
+- `harnas fork <session.jsonl> --at-seq N --out <new.jsonl>` writes a
+  forked Session whose Log preserves the original prefix through `N`.
+- `harnas diff <a.jsonl> <b.jsonl>` pinpoints the first divergent
+  Session header or Event seq between two persisted Sessions.
+- `harnas project <session.jsonl> --manifest PATH [--from-seq N]
+  [--to-seq M]` renders the provider request body that a manifest's
+  projection would produce from a saved Log slice, without calling the
+  provider.
 
 `Harnas::Agent` also exposes a streaming façade:
 

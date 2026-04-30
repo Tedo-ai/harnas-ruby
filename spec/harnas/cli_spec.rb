@@ -218,4 +218,86 @@ RSpec.describe Harnas::CLI do
       )
     end
   end
+
+  it "forks a saved session to a new JSONL file" do
+    Dir.mktmpdir("harnas-cli-") do |dir|
+      session = Harnas::Session.new(id: "ses_parent", metadata: { label: "demo" })
+      session.log.append(type: :user_message, payload: { text: "hello" })
+      session.log.append(
+        type: :assistant_message,
+        payload: { text: "hi", stop_reason: :end_turn, usage: {} }
+      )
+      session.log.append(type: :user_message, payload: { text: "again" })
+      source = File.join(dir, "source.jsonl")
+      target = File.join(dir, "forked.jsonl")
+      session.save(source)
+
+      status, stdout, stderr = run_cli(["fork", source, "--at-seq", "1", "--out", target])
+      forked = Harnas::Session.load(target)
+
+      expect(status).to eq(0)
+      expect(stderr).to eq("")
+      expect(stdout).to include("forked ses_parent at seq 1")
+      expect(forked.id).not_to eq(session.id)
+      expect(forked.metadata).to include(forked_from: "ses_parent", forked_at_seq: 1)
+      expect(forked.log.map(&:id)).to eq(session.log.take(2).map(&:id))
+    end
+  end
+
+  it "diffs saved sessions structurally" do
+    Dir.mktmpdir("harnas-cli-") do |dir|
+      left = Harnas::Session.new(id: "ses_diff", metadata: {})
+      left.log.append(type: :user_message, payload: { text: "hello" })
+      right = Harnas::Session.new(id: "ses_diff", metadata: {})
+      right.log.append(type: :user_message, payload: { text: "goodbye" })
+      left_path = File.join(dir, "left.jsonl")
+      right_path = File.join(dir, "right.jsonl")
+      same_path = File.join(dir, "same.jsonl")
+      left.save(left_path)
+      left.save(same_path)
+      right.save(right_path)
+
+      same_status, same_stdout, same_stderr = run_cli(["diff", left_path, same_path])
+      diff_status, diff_stdout, diff_stderr = run_cli(["diff", left_path, right_path])
+
+      expect(same_status).to eq(0)
+      expect(same_stdout).to eq("sessions match (1 events)\n")
+      expect(same_stderr).to eq("")
+      expect(diff_status).to eq(3)
+      expect(diff_stdout).to include("sessions differ at seq 0")
+      expect(diff_stdout).to include("\"hello\"")
+      expect(diff_stdout).to include("\"goodbye\"")
+      expect(diff_stderr).to eq("")
+    end
+  end
+
+  it "projects a saved session to a provider request without calling a provider" do
+    Dir.mktmpdir("harnas-cli-") do |dir|
+      session = Harnas::Session.new(id: "ses_project", metadata: {})
+      session.log.append(type: :user_message, payload: { text: "hello" })
+      session.log.append(
+        type: :assistant_message,
+        payload: { text: "hi", stop_reason: :end_turn, usage: {} }
+      )
+      session.log.append(type: :user_message, payload: { text: "again" })
+      session_path = File.join(dir, "session.jsonl")
+      session.save(session_path)
+      manifest = write_manifest(dir, basic_manifest)
+
+      status, stdout, stderr = run_cli(
+        ["project", session_path, "--manifest", manifest, "--to-seq", "1"]
+      )
+      request = JSON.parse(stdout)
+
+      expect(status).to eq(0)
+      expect(stderr).to eq("")
+      expect(request).to include("model" => "mock-test", "max_tokens" => 1024)
+      expect(request.fetch("messages")).to eq(
+        [
+          { "role" => "user", "content" => "hello" },
+          { "role" => "assistant", "content" => "hi" }
+        ]
+      )
+    end
+  end
 end
