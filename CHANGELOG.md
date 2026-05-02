@@ -9,6 +9,8 @@ the specification as a whole.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-05-02
+
 ### Reference implementation (Ruby)
 
 #### Added

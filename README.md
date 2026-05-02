@@ -5,7 +5,7 @@ a specification for LLM agent harnesses. Passes 20/20 conformance fixtures
 byte-identically with the spec; live providers Anthropic + OpenAI + Gemini;
 577 RSpec examples; rubocop clean.
 
-**Version 0.4.0** (2026-04-29). Tracks Harnas spec 0.4.0.
+**Version 0.5.0** (2026-05-02). Tracks Harnas spec 0.5.0.
 
 ## What's in here
 
