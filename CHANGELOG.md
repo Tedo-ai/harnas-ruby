@@ -9,6 +9,16 @@ the specification as a whole.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-05-02
+
+### Reference implementation (Ruby)
+
+#### Changed
+
+- No Ruby code changes. This release keeps the reference implementation
+  aligned with the spec and sibling implementation tags while
+  harnas-python reaches the same public feature surface.
+
 ## [0.5.0] — 2026-05-02
 
 ### Reference implementation (Ruby)
