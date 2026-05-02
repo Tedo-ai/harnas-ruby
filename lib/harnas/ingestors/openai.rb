@@ -50,9 +50,24 @@ module Harnas
           payload: Events::AssistantMessage.new(
             text: message["content"].to_s,
             stop_reason: stop,
-            usage: usage
+            usage: usage,
+            reasoning: reasoning_blocks(message)
           ).to_h
         }
+      end
+
+      def reasoning_blocks(message)
+        blocks = []
+        if message["reasoning"].is_a?(String) && !message["reasoning"].empty?
+          blocks << { type: "text", text: message["reasoning"] }
+        end
+        Array(message["reasoning_details"]).each do |detail|
+          next unless detail.is_a?(Hash)
+
+          text = detail["text"] || detail["reasoning"] || detail["content"]
+          blocks << { type: "text", text: text } if text.is_a?(String) && !text.empty?
+        end
+        blocks.empty? ? nil : blocks
       end
 
       def tool_use_event(tool_call)

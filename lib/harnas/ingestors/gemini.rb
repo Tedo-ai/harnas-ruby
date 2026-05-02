@@ -63,12 +63,23 @@ module Harnas
 
       def assistant_event(parts, stop, usage)
         text = parts.map { |p| p["text"].to_s }.join
+        reasoning = reasoning_blocks(parts)
         {
           type: :assistant_message,
           payload: Events::AssistantMessage.new(
-            text: text, stop_reason: stop, usage: usage
+            text: text, stop_reason: stop, usage: usage, reasoning: reasoning
           ).to_h
         }
+      end
+
+      def reasoning_blocks(parts)
+        blocks = parts.filter_map do |part|
+          thought = part["thought"] || part["thoughtSummary"] || part["thought_summary"]
+          next unless thought.is_a?(String) && !thought.empty?
+
+          { type: "text", text: thought }
+        end
+        blocks.empty? ? nil : blocks
       end
 
       def tool_use_event(call)

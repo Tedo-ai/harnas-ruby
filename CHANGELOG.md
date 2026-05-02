@@ -9,6 +9,20 @@ the specification as a whole.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-05-02
+
+### Reference implementation (Ruby)
+
+#### Added
+
+- `:assistant_message` now accepts an optional `reasoning` block list.
+- Anthropic, OpenAI, and Gemini ingestors capture provider reasoning
+  content into `payload.reasoning` when present.
+- The Anthropic projection round-trips captured reasoning as thinking
+  content blocks, including signatures, for follow-up turns.
+- Conformance now passes 23/23 fixtures, including reasoning capture
+  for Anthropic, OpenAI, and Kimi-shaped OpenAI-compatible responses.
+
 ## [0.6.0] — 2026-05-02
 
 ### Reference implementation (Ruby)

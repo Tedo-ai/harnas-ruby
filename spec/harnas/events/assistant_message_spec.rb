@@ -8,11 +8,12 @@ RSpec.describe Harnas::Events::AssistantMessage do
     described_class.new(**defaults, **overrides)
   end
 
-  it "holds text, stop_reason, and usage" do
+  it "holds text, stop_reason, usage, and optional reasoning" do
     msg = make
     expect(msg.text).to eq("hi")
     expect(msg.stop_reason).to eq(:end_turn)
     expect(msg.usage).to eq({ input_tokens: 1, output_tokens: 1 })
+    expect(msg.reasoning).to be_nil
   end
 
   it "is frozen (immutable)" do
@@ -48,6 +49,17 @@ RSpec.describe Harnas::Events::AssistantMessage do
     expect { make(usage: nil) }.to raise_error(ArgumentError, /usage must be a Hash/)
   end
 
+  it "accepts reasoning text blocks" do
+    msg = make(reasoning: [{ type: "text", text: "thinking", signature: "sig" }])
+
+    expect(msg.reasoning).to eq([{ type: "text", text: "thinking", signature: "sig" }])
+  end
+
+  it "rejects invalid reasoning blocks" do
+    expect { make(reasoning: [{ type: "binary", text: "no" }]) }
+      .to raise_error(ArgumentError, /reasoning must be/)
+  end
+
   it "is equal to another AssistantMessage with the same fields" do
     expect(make).to eq(make)
   end
@@ -55,5 +67,10 @@ RSpec.describe Harnas::Events::AssistantMessage do
   it "serializes to a hash via #to_h" do
     expect(make.to_h).to eq({ text: "hi", stop_reason: :end_turn,
                               usage: { input_tokens: 1, output_tokens: 1 } })
+  end
+
+  it "serializes reasoning when present" do
+    expect(make(reasoning: [{ type: "text", text: "thinking" }]).to_h)
+      .to include(reasoning: [{ type: "text", text: "thinking" }])
   end
 end

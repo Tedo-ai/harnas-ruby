@@ -56,11 +56,12 @@ module Harnas
           next if translated.nil?
 
           role, block = translated
+          blocks = block.is_a?(Array) ? block : [block]
           if current && current[:role] == role
-            current[:blocks] << block
+            current[:blocks].concat(blocks)
           else
             groups << current if current
-            current = { role: role, blocks: [block] }
+            current = { role: role, blocks: blocks }
           end
         end
         groups << current if current
@@ -92,9 +93,26 @@ module Harnas
       end
 
       def translate_assistant_text(evt)
-        return nil if evt.payload[:text].nil? || evt.payload[:text].empty?
+        blocks = reasoning_blocks(evt)
+        text = evt.payload[:text].to_s
+        blocks << { type: "text", text: text } unless text.empty?
+        return nil if blocks.empty?
 
-        ["assistant", { type: "text", text: evt.payload[:text] }]
+        ["assistant", blocks]
+      end
+
+      def reasoning_blocks(evt)
+        Array(evt.payload[:reasoning]).filter_map do |block|
+          next unless (block[:type] || block["type"]) == "text"
+
+          text = block[:text] || block["text"]
+          next unless text.is_a?(String)
+
+          out = { type: "thinking", thinking: text }
+          signature = block[:signature] || block["signature"]
+          out[:signature] = signature if signature
+          out
+        end
       end
 
       def translate_tool_result(evt)

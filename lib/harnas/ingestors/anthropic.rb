@@ -51,12 +51,24 @@ module Harnas
 
       def assistant_event(content, stop, usage)
         text = content.select { |b| b["type"] == "text" }.map { |b| b["text"].to_s }.join
+        reasoning = reasoning_blocks(content)
         {
           type: :assistant_message,
           payload: Events::AssistantMessage.new(
-            text: text, stop_reason: stop, usage: usage
+            text: text, stop_reason: stop, usage: usage, reasoning: reasoning
           ).to_h
         }
+      end
+
+      def reasoning_blocks(content)
+        blocks = content.filter_map do |block|
+          next unless block["type"] == "thinking"
+
+          out = { type: "text", text: block["thinking"].to_s }
+          out[:signature] = block["signature"].to_s if block["signature"]
+          out
+        end
+        blocks.empty? ? nil : blocks
       end
 
       def tool_use_event(block)
