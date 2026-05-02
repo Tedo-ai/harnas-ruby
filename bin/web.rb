@@ -20,6 +20,8 @@ $LOAD_PATH.unshift File.expand_path("../lib", __dir__)
 
 require "optparse"
 require "json"
+require "tempfile"
+require "fileutils"
 require "rack"
 require "rackup"
 require "puma"
@@ -58,7 +60,13 @@ require "harnas/benchmark/canned_provider"
 require "harnas/tools/tool"
 require "harnas/tools/registry"
 require "harnas/tools/runner"
+require "harnas/tools/builtin"
+require "harnas/tools/middleware/stale_read_guard"
 require "harnas/strategies/compaction/marker_tail"
+require "harnas/strategies/compaction/summary_tail"
+require "harnas/strategies/compaction/token_marker_tail"
+require "harnas/strategies/compaction/tool_output_cap"
+require "harnas/strategies/permission/human_approval"
 require "harnas/hooks"
 require "harnas/observation"
 
@@ -125,7 +133,7 @@ BRIDGE = Bridge.new
 # from whatever thread emitted the event (typically the AgentLoop worker).
 TRACE_DELTAS = !ENV["HARNAS_TRACE_DELTAS"].to_s.empty?
 
-Harnas::Observation.subscribe do |event_name, payload|
+WEB_OBSERVER = lambda do |event_name, payload|
   # Opt-in server-side timing trace for streaming deltas. Off by default
   # now that streaming is proven; set HARNAS_TRACE_DELTAS=1 to re-enable.
   if TRACE_DELTAS && event_name == :event_appended
@@ -142,6 +150,8 @@ Harnas::Observation.subscribe do |event_name, payload|
     ts: Time.now.to_f
   )
 end
+
+Harnas::Observation.subscribe(&WEB_OBSERVER)
 
 # Reduce a payload Hash to JSON-safe primitives. Event objects from the
 # Log carry seq/id/type/payload; we surface those directly. Everything
@@ -171,6 +181,41 @@ end
 # connected clients. Tab open in two browsers = two views of the same
 # session. (Multi-session is a Phase Q concern.)
 # ──────────────────────────────────────────────────────────────────────
+# Mutable live-monitor state. One Session is shared by every browser tab,
+# but the browser can now change its tool registry, system prompt, and
+# strategy hooks while the server is running.
+DESTRUCTIVE_TOOLS = %w[run_shell write_file edit_file].freeze
+ALL_BUILTIN_TOOL_NAMES = Harnas::Tools::Builtin.descriptors.map { |d| d[:name] }.freeze
+
+SHARED_STATE = { # rubocop:disable Style/MutableConstant -- live web monitor state
+  session: Harnas::Session.create(metadata: { started_on: Time.now.utc.iso8601 }),
+  enabled_tools: ALL_BUILTIN_TOOL_NAMES.dup,
+  registry: nil,
+  stale_read_guard: true,
+  system_prompt: nil,
+  installed_strategy_names: [],
+  installed_strategy_configs: [],
+  permission_tools: DESTRUCTIVE_TOOLS.dup,
+  pending_permission: nil
+}
+
+def shared_session
+  SHARED_STATE.fetch(:session)
+end
+
+def shared_registry
+  SHARED_STATE.fetch(:registry)
+end
+
+def attach_web_observer!(session)
+  session.observation.subscribe(WEB_OBSERVER)
+end
+
+def active_system_prompt
+  prompt = SHARED_STATE[:system_prompt].to_s
+  prompt.empty? ? nil : prompt
+end
+
 # Build every provider triplet we have credentials for. Each triplet is
 # an { projection, provider_or_stream_provider, ingestor_or_nil, label,
 # model } that can be plugged into a per-turn AgentLoop. The Session is
@@ -263,10 +308,12 @@ end
 
 def mock_triplet
   {
-    projection: Harnas::Projections::Anthropic.new(model: "mock-model"),
+    projection: Harnas::Projections::Anthropic.new(
+      model: "mock-model", registry: shared_registry, system: active_system_prompt
+    ),
     stream_provider: FakeStreamProvider.new,
-    provider: nil,
-    ingestor: nil,
+    provider: Harnas::Benchmark::CannedProvider.new(response_text: "mock summary"),
+    ingestor: Harnas::Ingestors::Anthropic.new,
     label: "mock (streaming)",
     model: "mock-model"
   }
@@ -277,20 +324,18 @@ def anthropic_triplet(stream:)
   config  = Harnas::Config.for_provider(:anthropic)
   model   = config.fetch(:model)
   {
-    projection: Harnas::Projections::Anthropic.new(model: model, registry: SHARED_REGISTRY),
+    projection: Harnas::Projections::Anthropic.new(
+      model: model, registry: shared_registry, system: active_system_prompt
+    ),
     stream_provider: (if stream
                         Harnas::Providers::AnthropicStreamLive.new(
                           api_key: api_key, api_version: config.fetch(:api_version)
                         )
                       end),
-    provider: (if stream
-                 nil
-               else
-                 Harnas::Providers::Anthropic.new(
-                   api_key: api_key, api_version: config.fetch(:api_version)
-                 )
-               end),
-    ingestor: (stream ? nil : Harnas::Ingestors::Anthropic.new),
+    provider: Harnas::Providers::Anthropic.new(
+      api_key: api_key, api_version: config.fetch(:api_version)
+    ),
+    ingestor: Harnas::Ingestors::Anthropic.new,
     label: (stream ? "anthropic (streaming)" : "anthropic (buffered)"),
     model: model
   }
@@ -301,10 +346,12 @@ def openai_triplet(stream:)
   config  = Harnas::Config.for_provider(:openai)
   model   = config.fetch(:model)
   {
-    projection: Harnas::Projections::OpenAI.new(model: model, registry: SHARED_REGISTRY),
+    projection: Harnas::Projections::OpenAI.new(
+      model: model, registry: shared_registry, system: active_system_prompt
+    ),
     stream_provider: (stream ? Harnas::Providers::OpenAIStreamLive.new(api_key: api_key) : nil),
-    provider: (stream ? nil : Harnas::Providers::OpenAI.new(api_key: api_key)),
-    ingestor: (stream ? nil : Harnas::Ingestors::OpenAI.new),
+    provider: Harnas::Providers::OpenAI.new(api_key: api_key),
+    ingestor: Harnas::Ingestors::OpenAI.new,
     label: (stream ? "openai (streaming)" : "openai (buffered)"),
     model: model
   }
@@ -315,38 +362,70 @@ def gemini_triplet(stream:)
   config  = Harnas::Config.for_provider(:gemini)
   model   = config.fetch(:model)
   {
-    projection: Harnas::Projections::Gemini.new(model: model, registry: SHARED_REGISTRY),
+    projection: Harnas::Projections::Gemini.new(
+      model: model, registry: shared_registry, system: active_system_prompt
+    ),
     stream_provider: (stream ? Harnas::Providers::GeminiStreamLive.new(api_key: api_key) : nil),
-    provider: (stream ? nil : Harnas::Providers::Gemini.new(api_key: api_key)),
-    ingestor: (stream ? nil : Harnas::Ingestors::Gemini.new),
+    provider: Harnas::Providers::Gemini.new(api_key: api_key),
+    ingestor: Harnas::Ingestors::Gemini.new,
     label: (stream ? "gemini (streaming)" : "gemini (buffered)"),
     model: model
   }
 end
 
-# The default registry ships with one tool whose purpose is narrow
-# enough that Claude won't volunteer it for generic replies. An `echo`
-# tool was removed because its description ("echoes text back") baited
-# the model into routing ordinary responses through it — when asked
-# "write a long message" Claude picked echo as the natural way to
-# produce long output, which made the web inspector look like an agent
-# loop pointlessly calling tools on itself.
-def build_default_registry
-  registry = Harnas::Tools::Registry.new
-  registry.register(
-    Harnas::Tools::Tool.new(
-      name: "get_current_time",
-      description: "Returns the current UTC time as an ISO 8601 string. " \
-                   "Use this only when the user asks what time it is.",
-      input_schema: { type: "object", properties: {}, required: [] }
-    ) { |_args| Time.now.utc.iso8601 }
+def builtin_handlers_for(session)
+  handlers = Harnas::Tools::Builtin.handlers.dup
+  return handlers unless SHARED_STATE[:stale_read_guard]
+
+  guard = Harnas::Tools::Middleware::StaleReadGuard.new(
+    log: session.log, strict: true, require_read: true
   )
+  handlers["harnas.builtin.read_file"] = guard.wrap_read(
+    handlers.fetch("harnas.builtin.read_file")
+  )
+  handlers["harnas.builtin.edit_file"] = guard.wrap_edit(
+    handlers.fetch("harnas.builtin.edit_file")
+  )
+  handlers["harnas.builtin.write_file"] = guard.wrap_write(
+    handlers.fetch("harnas.builtin.write_file")
+  )
+  handlers
+end
+
+def build_registry(enabled_tools:, session:)
+  registry = Harnas::Tools::Registry.new
+  handlers = builtin_handlers_for(session)
+  enabled = enabled_tools.to_set
+  Harnas::Tools::Builtin.descriptors.each do |desc|
+    next unless enabled.include?(desc.fetch(:name))
+
+    registry.register(
+      Harnas::Tools::Tool.new(
+        name: desc.fetch(:name),
+        description: desc.fetch(:description),
+        input_schema: desc.fetch(:input_schema)
+      ) { |args| handlers.fetch(desc.fetch(:handler)).call(args) }
+    )
+  end
   registry
 end
 
-SHARED_REGISTRY = build_default_registry
-SHARED_SESSION  = Harnas::Session.create(metadata: { started_on: Time.now.utc.iso8601 })
-TRIPLETS        = build_triplets(stream: options[:stream])
+def rebuild_registry!
+  SHARED_STATE[:registry] = build_registry(
+    enabled_tools: SHARED_STATE[:enabled_tools],
+    session: shared_session
+  )
+end
+
+def rebuild_triplets!(stream:)
+  TRIPLETS.clear
+  TRIPLETS.merge!(build_triplets(stream: stream))
+end
+
+TRIPLETS = {} # rubocop:disable Style/MutableConstant -- rebuilt when config changes
+rebuild_registry!
+attach_web_observer!(shared_session)
+rebuild_triplets!(stream: options[:stream])
 
 raise "no provider credentials found and --mock not requested" if TRIPLETS.empty?
 
@@ -363,7 +442,7 @@ end
 # triplet, registered tools, installed strategies (per canonical
 # hook point), and max_turns. This is pure introspection — no
 # mutation of state.
-def current_config_introspection
+def current_config_introspection # rubocop:disable Metrics/AbcSize,Metrics/MethodLength
   kind = current_provider
   triplet = TRIPLETS.fetch(kind)
   {
@@ -374,13 +453,21 @@ def current_config_introspection
       projection_class: triplet[:projection].class.name,
       streaming: !triplet[:stream_provider].nil?
     },
-    tools: SHARED_REGISTRY.tools.map do |tool|
-      { name: tool.name, description: tool.description }
+    system_prompt: active_system_prompt,
+    tools: Harnas::Tools::Builtin.descriptors.map do |desc|
+      name = desc.fetch(:name)
+      {
+        name: name,
+        description: desc.fetch(:description),
+        enabled: SHARED_STATE[:enabled_tools].include?(name),
+        destructive: DESTRUCTIVE_TOOLS.include?(name),
+        approval_required: SHARED_STATE[:permission_tools].include?(name)
+      }
     end,
-    hooks: SHARED_SESSION.hooks.handlers.each_with_object({}) do |(hook, handlers), h|
+    hooks: shared_session.hooks.handlers.each_with_object({}) do |(hook, handlers), h|
       h[hook.to_s] = handlers.size
     end,
-    strategies_installed: INSTALLED_STRATEGY_NAMES.dup,
+    strategies_installed: SHARED_STATE[:installed_strategy_names].dup,
     max_turns: 6
   }
 end
@@ -393,16 +480,122 @@ def switch_current_provider(kind)
   end
 end
 
-# Install the canonical compaction strategy so the live block-strip has
-# something interesting to render once the conversation gets long enough.
-# Tracked in INSTALLED_STRATEGY_NAMES so the browser's configuration
-# panel can display what the running harness is actually wired to.
-INSTALLED_STRATEGY_NAMES = [] # rubocop:disable Style/MutableConstant -- populated by install_default_strategies!
+def broadcast_config_changed
+  BRIDGE.broadcast(kind: "config_changed", config: current_config_introspection)
+end
+
+def install_strategy!(name, config, record: true)
+  symbolized = config.transform_keys(&:to_sym)
+  case name
+  when "Compaction::MarkerTail"
+    Harnas::Strategies::Compaction::MarkerTail.install(shared_session, **symbolized)
+  when "Compaction::TokenMarkerTail"
+    Harnas::Strategies::Compaction::TokenMarkerTail.install(shared_session, **symbolized)
+  when "Compaction::ToolOutputCap"
+    Harnas::Strategies::Compaction::ToolOutputCap.install(shared_session, **symbolized)
+  when "Compaction::SummaryTail"
+    triplet = TRIPLETS.fetch(current_provider)
+    Harnas::Strategies::Compaction::SummaryTail.install(
+      shared_session,
+      projection: triplet.fetch(:projection),
+      provider: triplet.fetch(:provider),
+      ingestor: triplet.fetch(:ingestor),
+      **symbolized
+    )
+  else
+    raise ArgumentError, "unknown strategy #{name.inspect}"
+  end
+
+  label = "#{name}(#{symbolized.map { |k, v| "#{k}=#{v.inspect}" }.join(", ")})"
+  SHARED_STATE[:installed_strategy_names] << label
+  SHARED_STATE[:installed_strategy_configs] << { name: name, config: config } if record
+  label
+end
+
+def permission_prompt_for(tool_use)
+  tool_name = tool_use.payload[:name].to_s
+  return true unless SHARED_STATE[:permission_tools].include?(tool_name)
+
+  mutex = Mutex.new
+  cv = ConditionVariable.new
+  request = {
+    id: SecureRandom.uuid,
+    tool_use: serialize_event(tool_use),
+    decision: nil,
+    mutex: mutex,
+    cv: cv
+  }
+  SHARED_STATE[:pending_permission] = request
+  BRIDGE.broadcast(
+    kind: "permission_request",
+    id: request[:id],
+    tool_use: request[:tool_use]
+  )
+
+  mutex.synchronize do
+    cv.wait(mutex, 300) while request[:decision].nil?
+    request[:decision] == true
+  end
+ensure
+  SHARED_STATE[:pending_permission] = nil if SHARED_STATE[:pending_permission].equal?(request)
+end
+
+def permission_decision_applied?(id, allow)
+  request = SHARED_STATE[:pending_permission]
+  return false unless request && request[:id] == id
+
+  request[:mutex].synchronize do
+    request[:decision] = allow
+    request[:cv].broadcast
+  end
+  true
+end
+
+def install_permission_strategy!(record: true)
+  Harnas::Strategies::Permission::HumanApproval.install(
+    shared_session,
+    prompt: method(:permission_prompt_for),
+    denial_reason: "denied by web approval"
+  )
+  SHARED_STATE[:installed_strategy_names] <<
+    "Permission::HumanApproval(#{SHARED_STATE[:permission_tools].join(", ")})"
+  return unless record
+
+  SHARED_STATE[:installed_strategy_configs] << {
+    name: "Permission::HumanApproval", config: {}
+  }
+end
+
+def toggle_tool!(name, enabled, stream:)
+  return unless ALL_BUILTIN_TOOL_NAMES.include?(name)
+
+  tools = SHARED_STATE[:enabled_tools]
+  SHARED_STATE[:enabled_tools] = enabled ? tools | [name] : tools - [name]
+  rebuild_registry!
+  rebuild_triplets!(stream: stream)
+  broadcast_config_changed
+end
 
 def install_default_strategies!
-  Harnas::Strategies::Compaction::MarkerTail.install(SHARED_SESSION, max_messages: 12,
-                                                                     keep_recent: 6)
-  INSTALLED_STRATEGY_NAMES << "Compaction::MarkerTail(max_messages=12, keep_recent=6)"
+  install_strategy!(
+    "Compaction::MarkerTail",
+    { "max_messages" => 12, "keep_recent" => 6 },
+    record: true
+  )
+  install_permission_strategy!(record: true)
+end
+
+def reapply_installed_strategies!
+  configs = SHARED_STATE[:installed_strategy_configs].dup
+  SHARED_STATE[:installed_strategy_names] = []
+  SHARED_STATE[:installed_strategy_configs] = []
+  configs.each do |entry|
+    if entry[:name] == "Permission::HumanApproval"
+      install_permission_strategy!(record: true)
+    else
+      install_strategy!(entry[:name], entry[:config], record: true)
+    end
+  end
 end
 
 install_default_strategies!
@@ -424,11 +617,11 @@ Thread.new do
     triplet = TRIPLETS.fetch(kind)
 
     BRIDGE.broadcast(kind: "system", message: "[turn started · #{triplet[:label]}]")
-    SHARED_SESSION.log.append(
+    shared_session.log.append(
       type: :user_message,
       payload: Harnas::Events::UserMessage.new(text: text).to_h
     )
-    build_loop_for(triplet, SHARED_SESSION, SHARED_REGISTRY).run
+    build_loop_for(triplet, shared_session, shared_registry).run
     BRIDGE.broadcast(kind: "system", message: "[turn finished]")
   rescue StandardError => e
     BRIDGE.broadcast(kind: "error", message: "#{e.class}: #{e.message}")
@@ -475,9 +668,9 @@ APP = lambda do |env|
                 model: t[:model],
                 provider: kind,
                 providers: TRIPLETS.keys.map { |k| { kind: k, label: TRIPLETS[k][:label] } },
-                session: SHARED_SESSION.id,
+                session: shared_session.id,
                 config: current_config_introspection,
-                log: SHARED_SESSION.log.map { |e| serialize_for_wire(e) }
+                log: shared_session.log.map { |e| serialize_for_wire(e) }
               ))
     end
 
@@ -509,6 +702,31 @@ APP = lambda do |env|
             kind: "error",
             message: "provider #{requested.inspect} is not available"
           )
+        end
+      when "set_system_prompt"
+        SHARED_STATE[:system_prompt] = data["text"].to_s
+        rebuild_triplets!(stream: options[:stream])
+        broadcast_config_changed
+      when "toggle_tool"
+        name = data["name"].to_s
+        toggle_tool!(name, data["enabled"] != false, stream: options[:stream])
+      when "set_permission_tools"
+        names = Array(data["names"]).map(&:to_s) & ALL_BUILTIN_TOOL_NAMES
+        SHARED_STATE[:permission_tools] = names
+        shared_session.hooks.reset!
+        reapply_installed_strategies!
+        broadcast_config_changed
+      when "install_strategy"
+        begin
+          label = install_strategy!(data["name"].to_s, data["config"] || {})
+          broadcast_config_changed
+          BRIDGE.broadcast(kind: "system", message: "[installed #{label}]")
+        rescue StandardError => e
+          BRIDGE.broadcast(kind: "error", message: "#{e.class}: #{e.message}")
+        end
+      when "permission_decision"
+        unless permission_decision_applied?(data["id"].to_s, data["allow"] == true)
+          BRIDGE.broadcast(kind: "error", message: "permission request expired")
         end
       end
     end
@@ -548,14 +766,48 @@ APP = lambda do |env|
         label: t[:label],
         model: t[:model],
         providers: TRIPLETS.keys,
-        session: SHARED_SESSION.id,
-        log_size: SHARED_SESSION.log.size,
+        session: shared_session.id,
+        log_size: shared_session.log.size,
         clients: BRIDGE.client_count
       )
       [200,
        { "content-type" => "application/json",
          "cache-control" => "no-store" },
        [body]]
+    when "/save"
+      dir = File.join(Dir.home, ".harnas", "web")
+      FileUtils.mkdir_p(dir)
+      path = File.join(dir, "#{Time.now.utc.strftime("%Y%m%dT%H%M%SZ")}-#{shared_session.id}.jsonl")
+      shared_session.save(path)
+      [200,
+       { "content-type" => "application/json",
+         "cache-control" => "no-store" },
+       [JSON.generate(path: path)]]
+    when "/load"
+      body = Rack::Request.new(env).body.read
+      Tempfile.create(["harnas-web-load", ".jsonl"]) do |tmp|
+        tmp.write(body)
+        tmp.flush
+        SHARED_STATE[:session] = Harnas::Session.load(tmp.path)
+      end
+      attach_web_observer!(shared_session)
+      rebuild_registry!
+      rebuild_triplets!(stream: options[:stream])
+      reapply_installed_strategies!
+      BRIDGE.broadcast(
+        kind: "hello",
+        label: TRIPLETS.fetch(current_provider)[:label],
+        model: TRIPLETS.fetch(current_provider)[:model],
+        provider: current_provider,
+        providers: TRIPLETS.keys.map { |k| { kind: k, label: TRIPLETS[k][:label] } },
+        session: shared_session.id,
+        config: current_config_introspection,
+        log: shared_session.log.map { |e| serialize_for_wire(e) }
+      )
+      [200,
+       { "content-type" => "application/json",
+         "cache-control" => "no-store" },
+       [JSON.generate(session: shared_session.id, log_size: shared_session.log.size)]]
     else
       [404, { "content-type" => "text/plain" }, ["not found"]]
     end
@@ -572,7 +824,7 @@ puts ""
 puts "  Harnas Web"
 puts "  Providers: #{TRIPLETS.keys.join(", ")}"
 puts "  Starting:  #{initial[:label]} (#{initial[:model]})"
-puts "  Session:   #{SHARED_SESSION.id}"
+puts "  Session:   #{shared_session.id}"
 puts "  URL:       http://localhost:#{options[:port]}/"
 puts ""
 puts "  Open the URL in a browser. Type messages; switch providers"
