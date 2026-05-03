@@ -1,5 +1,27 @@
-// permission module boundary for the Harnas web monitor.
-// The v0.8.1 redesign splits static assets and creates concern-owned
-// module files without introducing a build step. Behavior remains wired
-// through app.js while these boundaries settle for follow-up extraction.
-export {};
+export function showPermissionRequest(msg, { $, state }) {
+  state.pendingPermissionId = msg.id;
+  const toolUse = (msg.tool_use && msg.tool_use.payload) || {};
+  $("permission-title").textContent = "Allow " + (toolUse.name || "tool") + "?";
+  $("permission-body").textContent = JSON.stringify(toolUse.arguments || {}, null, 2);
+  $("permission-modal").classList.add("active");
+}
+
+export function answerPermission(allow, { $, state, ws }) {
+  if (!state.pendingPermissionId || ws.readyState !== WebSocket.OPEN) return;
+  ws.sendJSON({
+    kind: "permission_decision",
+    id: state.pendingPermissionId,
+    allow
+  });
+  closePermission($);
+  state.pendingPermissionId = null;
+}
+
+export function closePermission($) {
+  $("permission-modal").classList.remove("active");
+}
+
+export function bindPermissionControls({ $, state, ws }) {
+  $("permission-allow").addEventListener("click", () => answerPermission(true, { $, state, ws }));
+  $("permission-deny").addEventListener("click", () => answerPermission(false, { $, state, ws }));
+}

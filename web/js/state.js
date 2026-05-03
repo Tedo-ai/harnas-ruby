@@ -1,5 +1,28 @@
-// state module boundary for the Harnas web monitor.
-// The v0.8.1 redesign splits static assets and creates concern-owned
-// module files without introducing a build step. Behavior remains wired
-// through app.js while these boundaries settle for follow-up extraction.
-export {};
+export const state = {
+  log: [],
+  streamingMsgEl: null,
+  streamingMsgText: "",
+  // Keyed by tool_use_id — each value is { el, name, argsText }
+  toolBubbles: {},
+  // Delta counter resets per turn and is shown in the header.
+  deltaCount: 0,
+  // rAF-batched render flags for expensive operations only.
+  pendingFrame: null,
+  dirtyTools: false,
+  dirtyStrip: false,
+  dirtyStats: false,
+  config: null,
+  pendingPermissionId: null,
+  // Transient timeline rows are Observation-only UI artifacts.
+  transientRows: [],
+  // Streaming scratchpad used by the strip builders.
+  streamingTurn: {
+    active: false,
+    asstChars: 0,
+    toolUses: {}
+  }
+};
+
+export function resetStreamingTurn(active = false) {
+  state.streamingTurn = { active, asstChars: 0, toolUses: {} };
+}

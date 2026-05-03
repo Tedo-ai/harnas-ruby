@@ -1,12 +1,16 @@
-  import "./state.js";
+  import { resetStreamingTurn, state } from "./state.js";
   import "./observation.js";
   import "./chat.js";
   import "./strip.js";
   import "./timeline.js";
   import "./config-panel.js";
-  import "./permission.js";
-  import "./transient.js";
-  import "./ws.js";
+  import {
+    bindPermissionControls,
+    closePermission,
+    showPermissionRequest
+  } from "./permission.js";
+  import { createTransientHandlers } from "./transient.js";
+  import { connectWebSocket } from "./ws.js";
 
   const COLORS = {
     user_message:            "#4a6da3",
@@ -29,42 +33,6 @@
     "user_message", "assistant_message", "tool_use", "tool_result", "summary"
   ]);
 
-  const state = {
-    log: [],
-    streamingMsgEl: null,
-    streamingMsgText: "",
-    // Keyed by tool_use_id — each value is { el, name, argsText }
-    toolBubbles: {},
-    // Delta counter (resets per turn) — shown in the header so the
-    // user can tell at a glance whether streaming events are arriving
-    // one by one or bunched at the end.
-    deltaCount: 0,
-    // rAF-batched render flags for expensive operations only (stats
-    // recompute, strip redraw). The bubble text itself writes
-    // synchronously on every delta so streaming is never invisibly
-    // coalesced into a single end-of-turn paint.
-    pendingFrame: null,
-    dirtyTools:  false,
-    dirtyStrip:  false,
-    dirtyStats:  false,
-    config: null,
-    pendingPermissionId: null,
-    // Transient row references for the timeline detail view, populated
-    // while a turn is streaming. Cleared on assistant_turn_completed
-    // (the consolidated :assistant_message arrives via the durable Log
-    // path and the normal renderer adds its row).
-    transientRows: [],
-    // Live streaming turn — a parallel tracker that the strip-builders
-    // consult to render growing in-flight blocks. Distinct from
-    // state.log because v0.8 keeps streaming deltas off the durable
-    // Log; this is purely a UI scratchpad. Reset per turn.
-    streamingTurn: {
-      active: false,
-      asstChars: 0,         // accumulated assistant_text_delta chars
-      toolUses: {}          // tool_use_id -> { name, chars }
-    }
-  };
-
   const $ = (id) => document.getElementById(id);
   const chat = $("chat");
   const events = $("events");
@@ -82,31 +50,18 @@
   const sendBtn = $("send");
 
   const wsUrl = (location.protocol === "https:" ? "wss" : "ws") + "://" + location.host + "/";
-  let ws;
-
   function setStatus(cls, text) {
     status.className = "status " + cls;
     status.textContent = text;
   }
 
-  function connect() {
-    setStatus("", "connecting…");
-    ws = new WebSocket(wsUrl);
-    ws.onopen    = () => setStatus("connected", "live");
-    ws.onclose   = () => { setStatus("error", "disconnected"); setTimeout(connect, 1500); };
-    ws.onerror   = () => setStatus("error", "error");
-    ws.onmessage = (e) => {
-      // Streaming-bottleneck diagnostic: log arrival time of each
-      // delta message to the console so we can correlate browser
-      // receipt with server emission (see bin/web.rb's stderr
-      // timing trace).
-      if (e.data.indexOf("text_delta") > 0 || e.data.indexOf("argument_delta") > 0) {
-        console.log("[" + performance.now().toFixed(1) + "ms] ws message (" + e.data.length + " bytes)");
-      }
-      onMessage(JSON.parse(e.data));
-    };
-  }
-  connect();
+  const ws = connectWebSocket({ url: wsUrl, onMessage, setStatus });
+  const transient = createTransientHandlers({
+    $, state, colors: COLORS, chat,
+    ensureStreamingBubble, ensureToolBubble, flushStreamingBubble,
+    formatToolUseBody, makeMessageNode, scheduleRender, scheduleScroll, scrollChat,
+    resetStreamingTurn
+  });
 
   sendBtn.addEventListener("click", send);
   input.addEventListener("keydown", (e) => {
@@ -117,8 +72,7 @@
       send();
     }
   });
-  $("permission-allow").addEventListener("click", () => answerPermission(true));
-  $("permission-deny").addEventListener("click", () => answerPermission(false));
+  bindPermissionControls({ $, state, ws });
   $("help-close").addEventListener("click", closeHelp);
   document.addEventListener("keydown", handleKeybindings);
 
@@ -156,7 +110,7 @@
   function send() {
     const text = input.value.trim();
     if (!text || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(JSON.stringify({ kind: "user_message", text }));
+    ws.sendJSON({ kind: "user_message", text });
     input.value = "";
   }
 
@@ -178,7 +132,7 @@
       return;
     }
     if (msg.kind === "permission_request") {
-      showPermissionRequest(msg);
+      showPermissionRequest(msg, { $, state });
       return;
     }
     if (msg.kind === "provider_changed") {
@@ -194,25 +148,6 @@
     if (msg.kind !== "observation") return;
 
     handleObservation(msg.event_name, msg.payload);
-  }
-
-  function showPermissionRequest(msg) {
-    state.pendingPermissionId = msg.id;
-    const tu = (msg.tool_use && msg.tool_use.payload) || {};
-    $("permission-title").textContent = "Allow " + (tu.name || "tool") + "?";
-    $("permission-body").textContent = JSON.stringify(tu.arguments || {}, null, 2);
-    $("permission-modal").classList.add("active");
-  }
-
-  function answerPermission(allow) {
-    if (!state.pendingPermissionId || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(JSON.stringify({
-      kind: "permission_decision",
-      id: state.pendingPermissionId,
-      allow: allow
-    }));
-    $("permission-modal").classList.remove("active");
-    state.pendingPermissionId = null;
   }
 
   function handleKeybindings(e) {
@@ -233,7 +168,7 @@
       return;
     }
     if (e.key === "Escape") {
-      $("permission-modal").classList.remove("active");
+      closePermission($);
       closeHelp();
       return;
     }
@@ -317,7 +252,7 @@
         remove.type = "button";
         remove.title = "uninstall strategy";
         remove.textContent = "×";
-        remove.onclick = () => ws.send(JSON.stringify({ kind: "uninstall_strategy", index: s.index }));
+        remove.onclick = () => ws.sendJSON({ kind: "uninstall_strategy", index: s.index });
         li.appendChild(label);
         li.appendChild(remove);
         ul.appendChild(li);
@@ -402,7 +337,7 @@
 
     $("cfg-system").value = cfg.system_prompt || "";
     $("cfg-system-save").onclick = () => {
-      ws.send(JSON.stringify({ kind: "set_system_prompt", text: $("cfg-system").value }));
+      ws.sendJSON({ kind: "set_system_prompt", text: $("cfg-system").value });
     };
     $("cfg-install-strategy").onclick = () => installStrategyFromForm();
     $("cfg-save").onclick = saveSession;
@@ -416,11 +351,11 @@
       const enabled = document.createElement("input");
       enabled.type = "checkbox";
       enabled.checked = !!t.enabled;
-      enabled.onchange = () => ws.send(JSON.stringify({
+      enabled.onchange = () => ws.sendJSON({
         kind: "toggle_tool",
         name: t.name,
         enabled: enabled.checked
-      }));
+      });
       const approval = document.createElement("input");
       approval.type = "checkbox";
       approval.checked = !!t.approval_required;
@@ -429,7 +364,7 @@
         const names = (state.config.tools || [])
           .filter(x => (x.name === t.name ? approval.checked : x.approval_required))
           .map(x => x.name);
-        ws.send(JSON.stringify({ kind: "set_permission_tools", names: names }));
+        ws.sendJSON({ kind: "set_permission_tools", names: names });
       };
       const text = document.createElement("span");
       text.innerHTML = '<strong></strong> <span class="detail"></span>';
@@ -462,7 +397,7 @@
         prefix_bytes: Number($("cfg-prefix-bytes").value)
       };
     }
-    ws.send(JSON.stringify({ kind: "install_strategy", name: name, config: config }));
+    ws.sendJSON({ kind: "install_strategy", name: name, config: config });
   }
 
   async function saveSession() {
@@ -562,7 +497,7 @@
     });
     sel.onchange = () => {
       if (ws.readyState !== WebSocket.OPEN) return;
-      ws.send(JSON.stringify({ kind: "set_provider", provider: sel.value }));
+      ws.sendJSON({ kind: "set_provider", provider: sel.value });
     };
   }
 
@@ -588,144 +523,7 @@
   }
 
   function renderTransientStreamEvent(evt) {
-    appendTransientEvent(evt);
-  }
-
-  // Append a dashed row to the timeline detail list while a turn is
-  // streaming. These rows are *not* in state.log and are *not* persisted
-  // to the saved Session JSONL — they're pure UI feedback so the user
-  // can see chunks arriving in real time. Cleared on
-  // :assistant_turn_completed (via clearTransientTimelineRows) or when
-  // the consolidated :assistant_message lands via the durable Log path.
-  function appendTransientTimelineRow(evt) {
-    const list = document.getElementById("list-timeline");
-    if (!list) return;
-
-    const row = document.createElement("div");
-    row.className = "evt-row is-transient";
-
-    const bar = document.createElement("div");
-    bar.className = "evt-bar";
-    bar.style.background = COLORS[evt.type] || "#cccac2";
-
-    const seq = document.createElement("div");
-    seq.className = "evt-seq";
-    seq.textContent = "—";
-
-    const type = document.createElement("div");
-    type.className = "evt-type";
-    const tname = document.createElement("span");
-    tname.textContent = evt.type;
-    const tag = document.createElement("span");
-    tag.className = "tag tag-transient";
-    tag.textContent = "transient";
-    type.appendChild(tname);
-    type.appendChild(tag);
-
-    const body = document.createElement("div");
-    body.className = "evt-body";
-    if (evt.type === "assistant_text_delta") {
-      body.textContent = (evt.payload && evt.payload.chunk) || "";
-    } else if (evt.type === "tool_use_argument_delta") {
-      body.textContent = (evt.payload && evt.payload.chunk) || "";
-    } else if (evt.type === "assistant_turn_started") {
-      body.textContent = "turn " + ((evt.payload && evt.payload.turn_id) || "");
-    } else if (evt.type === "assistant_turn_completed") {
-      const u = (evt.payload && evt.payload.usage) || {};
-      body.textContent =
-        "stop=" + ((evt.payload && evt.payload.stop_reason) || "?") +
-        " · in=" + (u.input_tokens || 0) +
-        " out=" + (u.output_tokens || 0);
-    }
-
-    row.appendChild(bar);
-    row.appendChild(seq);
-    row.appendChild(type);
-    row.appendChild(body);
-
-    list.appendChild(row);
-    state.transientRows.push(row);
-  }
-
-  function clearTransientTimelineRows() {
-    state.transientRows.forEach(row => row.remove());
-    state.transientRows = [];
-  }
-
-  function appendTransientEvent(evt) {
-    if (evt.type === "assistant_text_delta") {
-      ensureStreamingBubble();
-      const chunk = evt.payload.chunk || "";
-      state.streamingMsgText += chunk;
-      state.streamingMsgEl.querySelector(".body")
-        .appendChild(document.createTextNode(chunk));
-      scheduleScroll();
-      state.deltaCount += 1;
-      $("meta-deltas").textContent = "δ " + state.deltaCount;
-      appendTransientTimelineRow(evt);
-      state.streamingTurn.asstChars += chunk.length;
-      scheduleRender({ strip: true });
-      return;
-    }
-    if (evt.type === "assistant_turn_started") {
-      state.streamingMsgEl = null;
-      state.streamingMsgText = "";
-      state.deltaCount = 0;
-      $("meta-deltas").textContent = "δ 0";
-      clearTransientTimelineRows();
-      appendTransientTimelineRow(evt);
-      state.streamingTurn = { active: true, asstChars: 0, toolUses: {} };
-      scheduleRender({ strip: true });
-      return;
-    }
-    if (evt.type === "assistant_turn_completed") {
-      flushStreamingBubble();
-      state.streamingMsgEl = null;
-      state.streamingMsgText = "";
-      appendTransientTimelineRow(evt);
-      // Don't clear streamingTurn yet — the consolidated :assistant_message
-      // hasn't landed in the durable Log yet. Clearing here would leave
-      // the strip showing nothing for the duration of the in-progress
-      // turn until the consolidated message arrives. Instead, the
-      // appendLogEvent path clears the tracker when the real
-      // :assistant_message or :tool_use lands.
-      return;
-    }
-    if (evt.type === "assistant_turn_failed") {
-      const node = makeMessageNode("error", (evt.payload && evt.payload.error) || "turn failed");
-      chat.appendChild(node);
-      scrollChat();
-      state.streamingMsgEl = null;
-      state.streamingMsgText = "";
-      clearTransientTimelineRows();
-      state.streamingTurn.active = false;
-      scheduleRender({ strip: true });
-      return;
-    }
-    if (evt.type === "tool_use_begin") {
-      ensureToolBubble(evt.payload.tool_use_id, evt.payload.name);
-      state.streamingTurn.toolUses[evt.payload.tool_use_id] = {
-        name: evt.payload.name || "",
-        chars: (evt.payload.name || "").length
-      };
-      scheduleRender({ strip: true });
-      return;
-    }
-    if (evt.type === "tool_use_argument_delta") {
-      const t = ensureToolBubble(evt.payload.tool_use_id, null);
-      t.argsText += (evt.payload.chunk || "");
-      const tracker = state.streamingTurn.toolUses[evt.payload.tool_use_id];
-      if (tracker) tracker.chars += (evt.payload.chunk || "").length;
-      scheduleRender({ strip: true });
-      return;
-    }
-    if (evt.type === "tool_use_end") {
-      const t = state.toolBubbles[evt.payload.tool_use_id];
-      if (t) {
-        t.argsText = JSON.stringify(evt.payload.arguments || {});
-        t.el.querySelector(".body").textContent = formatToolUseBody(t.name, t.argsText);
-      }
-    }
+    transient.appendTransientEvent(evt);
   }
 
   // Coalesce DOM updates into one per animation frame. Without this, a
@@ -814,8 +612,8 @@
     // streamingTurn tracker so the strip stops drawing the synthetic
     // in-flight block (the real one is now in state.log).
     if (evt.type === "assistant_message" || evt.type === "tool_use") {
-      clearTransientTimelineRows();
-      state.streamingTurn = { active: false, asstChars: 0, toolUses: {} };
+      transient.clearTransientTimelineRows();
+      resetStreamingTurn(false);
     }
 
     // ── text streaming ───────────────────────────────────────────
@@ -1435,31 +1233,8 @@
         ? evt.payload
         : null
     }));
-    appendStreamingTurnBlocks(blocks);
+    transient.appendStreamingTurnBlocks(blocks);
     return blocks;
-  }
-
-  // Append synthetic in-flight blocks for the current streaming turn,
-  // if one is active. Used by both buildContextBlocks and
-  // buildTimelineBlocks so the strip grows visibly as deltas arrive
-  // even though the durable Log has nothing yet for this turn.
-  function appendStreamingTurnBlocks(result) {
-    if (!state.streamingTurn.active) return;
-    const t = state.streamingTurn;
-    if (t.asstChars > 0) {
-      result.push({
-        type: "assistant_message",
-        tokens: Math.max(1, Math.ceil(t.asstChars / 4)),
-        streaming: true
-      });
-    }
-    Object.values(t.toolUses).forEach(tu => {
-      result.push({
-        type: "tool_use",
-        tokens: Math.max(1, Math.ceil(tu.chars / 4)),
-        streaming: true
-      });
-    });
   }
 
   // Context: the projection. Apply :compact mutations. Collapse streaming
@@ -1582,7 +1357,7 @@
       }
     });
 
-    appendStreamingTurnBlocks(result);
+    transient.appendStreamingTurnBlocks(result);
     return result;
   }
 
