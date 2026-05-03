@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "json"
+
 module Harnas
   # The Observation hook bus: a normative emission point for canonical
   # lifecycle events. See spec/13-observation.md for the contract,
@@ -119,6 +121,45 @@ module Harnas
 
       def reset!
         @events = []
+      end
+    end
+
+    # Informative sidecar logger for streaming transport detail. It keeps
+    # high-volume deltas out of the durable Session Log while still giving
+    # debuggers a tiny opt-in persistence hook.
+    class DeltaLogger
+      STREAM_EVENT_TYPES = %i[
+        assistant_turn_started
+        assistant_text_delta
+        tool_use_begin
+        tool_use_argument_delta
+        tool_use_end
+        assistant_turn_completed
+        assistant_turn_failed
+      ].freeze
+
+      def initialize(path:, observation:)
+        @path = path
+        @index = 0
+        @subscriber = observation.subscribe(method(:call))
+      end
+
+      attr_reader :subscriber
+
+      def call(event_name, payload)
+        return unless event_name == :stream_event
+
+        event = payload[:event]
+        return unless event && STREAM_EVENT_TYPES.include?(event.type)
+
+        File.open(@path, "a") do |io|
+          io.puts JSON.generate(
+            index: @index,
+            type: event.type.to_s,
+            payload: event.payload
+          )
+        end
+        @index += 1
       end
     end
   end

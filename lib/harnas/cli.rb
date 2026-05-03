@@ -62,11 +62,15 @@ module Harnas
         next if input.empty?
         break if %w[exit quit].include?(input.downcase)
 
-        response = agent.stream(input) { |delta| print_delta(delta) }
+        streamed = false
+        response = agent.stream(input) do |delta|
+          streamed = true if delta.type == :assistant_text_delta
+          print_delta(delta)
+        end
         error = terminal_provider_error(agent)
         if error
           @stderr.puts "provider error: #{format_provider_error(error)}"
-        elsif streamed_text?(response)
+        elsif streamed
           @stdout.puts
         else
           @stdout.puts response.text
@@ -210,13 +214,6 @@ module Harnas
 
     def print_delta(delta)
       @stdout.print delta.payload[:chunk] if delta.type == :assistant_text_delta
-    end
-
-    def streamed_text?(response)
-      response.log.reverse_each.any? do |event|
-        event.type == :assistant_text_delta &&
-          event.seq > response.log.reverse_each.find { |e| e.type == :user_message }.seq
-      end
     end
 
     def format_provider_error(error_event)

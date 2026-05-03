@@ -128,6 +128,7 @@ RSpec.describe Harnas::Agent do
       expect(yielded.map(&:type)).to eq(%i[assistant_text_delta assistant_text_delta])
       expect(yielded.map { |event| event.payload[:chunk] }.join).to eq("hello")
       expect(response.text).to eq("hello")
+      expect(response.log.map(&:type)).to eq(%i[user_message assistant_message])
     end
 
     it "falls back to buffered chat when no stream provider is configured" do

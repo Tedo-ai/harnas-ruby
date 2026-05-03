@@ -870,6 +870,69 @@
         stats: true
       });
     }
+    if (name === "stream_event") {
+      const evt = payload.event;
+      if (!evt) return;
+      renderTransientStreamEvent(evt);
+      scheduleRender({ stats: true });
+    }
+  }
+
+  function renderTransientStreamEvent(evt) {
+    const original = state.log;
+    state.log = original;
+    appendTransientEvent(evt);
+  }
+
+  function appendTransientEvent(evt) {
+    if (evt.type === "assistant_text_delta") {
+      ensureStreamingBubble();
+      const chunk = evt.payload.chunk || "";
+      state.streamingMsgText += chunk;
+      state.streamingMsgEl.querySelector(".body")
+        .appendChild(document.createTextNode(chunk));
+      scheduleScroll();
+      state.deltaCount += 1;
+      $("meta-deltas").textContent = "δ " + state.deltaCount;
+      return;
+    }
+    if (evt.type === "assistant_turn_started") {
+      state.streamingMsgEl = null;
+      state.streamingMsgText = "";
+      state.deltaCount = 0;
+      $("meta-deltas").textContent = "δ 0";
+      return;
+    }
+    if (evt.type === "assistant_turn_completed") {
+      flushStreamingBubble();
+      state.streamingMsgEl = null;
+      state.streamingMsgText = "";
+      return;
+    }
+    if (evt.type === "assistant_turn_failed") {
+      const node = makeMessageNode("error", (evt.payload && evt.payload.error) || "turn failed");
+      chat.appendChild(node);
+      scrollChat();
+      state.streamingMsgEl = null;
+      state.streamingMsgText = "";
+      return;
+    }
+    if (evt.type === "tool_use_begin") {
+      ensureToolBubble(evt.payload.tool_use_id, evt.payload.name);
+      return;
+    }
+    if (evt.type === "tool_use_argument_delta") {
+      const t = ensureToolBubble(evt.payload.tool_use_id, null);
+      t.argsText += (evt.payload.chunk || "");
+      return;
+    }
+    if (evt.type === "tool_use_end") {
+      const t = state.toolBubbles[evt.payload.tool_use_id];
+      if (t) {
+        t.argsText = JSON.stringify(evt.payload.arguments || {});
+        t.el.querySelector(".body").textContent = formatToolUseBody(t.name, t.argsText);
+      }
+    }
   }
 
   // Coalesce DOM updates into one per animation frame. Without this, a
@@ -1232,10 +1295,9 @@
   //              per effective message the Projection emits.
   //
   //   timeline — the literal Log in seq order. Every appended event is
-  //              one block — deltas, brackets, mutations, consolidated
-  //              messages. Nothing is collapsed or hidden. Useful for
-  //              debugging the streaming pipeline and watching the Log
-  //              grow.
+  //              one block — mutations and consolidated semantic messages.
+  //              Observation-only streaming deltas render live but do not
+  //              persist into this durable timeline.
   //
   // The two strips are rendered stacked and update together.
 

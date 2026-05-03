@@ -9,6 +9,31 @@ the specification as a whole.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-05-03
+
+### Reference implementation (Ruby)
+
+#### Changed
+
+- Streaming transport events now emit on Observation as `:stream_event`
+  and no longer append to the durable Log. Consolidated
+  `:assistant_message` / `:tool_use` Events still append as before.
+- `harnas chat` and the web monitor now render streaming from
+  Observation rather than reading deltas back out of the Log.
+- Conformance now passes 24/24 fixtures, including the
+  `with-delta-logger-sidecar` fixture.
+
+#### Added
+
+- Added `Harnas::Observation::DeltaLogger` for opt-in sidecar JSONL
+  persistence of streaming transport events.
+
+#### Fixed
+
+- OpenAI live streaming requests include
+  `stream_options: { include_usage: true }`, preserving non-zero usage
+  in the consolidated assistant message.
+
 ## [0.7.0] — 2026-05-02
 
 ### Reference implementation (Ruby)

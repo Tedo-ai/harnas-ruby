@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "tmpdir"
 require "harnas/manifest"
 require "harnas/tools/runner"
 require "harnas/agent_loop"
@@ -56,10 +57,17 @@ module Harnas
         script, streaming = load_provider_script(dir)
         inputs   = JSON.parse(File.read(File.join(dir, "inputs.json")))
         expected = load_expected(File.join(dir, "expected-log.jsonl"))
+        expected_deltas_path = File.join(dir, "expected-deltas.jsonl")
 
-        actual = run_agent(manifest, script, inputs, streaming: streaming)
+        actual, actual_deltas = run_agent_with_optional_deltas(
+          manifest, script, inputs, streaming: streaming,
+                                    expected_deltas_path: expected_deltas_path
+        )
 
         diff = first_mismatch(actual, expected)
+        if diff.nil? && File.exist?(expected_deltas_path)
+          diff = first_mismatch(actual_deltas, load_expected(expected_deltas_path))
+        end
         Result.new(
           fixture: File.basename(dir),
           passed: diff.nil?,
@@ -73,7 +81,21 @@ module Harnas
         serialize_log(run_session(manifest, script, inputs, streaming: streaming).log)
       end
 
-      def self.run_session(manifest, script, inputs, streaming: false, session: nil)
+      def self.run_agent_with_optional_deltas(manifest, script, inputs, streaming: false,
+                                              expected_deltas_path: nil)
+        return [run_agent(manifest, script, inputs, streaming: streaming), []] \
+          unless expected_deltas_path && File.exist?(expected_deltas_path)
+
+        Dir.mktmpdir("harnas-deltas") do |dir|
+          delta_path = File.join(dir, "session.deltas.jsonl")
+          session = run_session(manifest, script, inputs, streaming: streaming,
+                                                          delta_path: delta_path)
+          [serialize_log(session.log), load_expected(delta_path)]
+        end
+      end
+
+      def self.run_session(manifest, script, inputs, streaming: false, session: nil,
+                           delta_path: nil)
         scripted = if streaming
                      ScriptedStreamProvider.new(streams: script)
                    else
@@ -86,6 +108,12 @@ module Harnas
           strategy_handlers: conformance_strategy_handlers
         )
         loaded = loaded.with_session(session) if session
+        if delta_path
+          Harnas::Observation::DeltaLogger.new(
+            path: delta_path,
+            observation: loaded.session.observation
+          )
+        end
 
         Harnas::Hooks.scoped do
           loaded.install_strategies!

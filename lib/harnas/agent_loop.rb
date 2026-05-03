@@ -19,6 +19,15 @@ module Harnas
       assistant_text_delta
       tool_use_argument_delta
     ].freeze
+    STREAM_OBSERVATION_TYPES = %i[
+      assistant_turn_started
+      assistant_text_delta
+      tool_use_begin
+      tool_use_argument_delta
+      tool_use_end
+      assistant_turn_completed
+      assistant_turn_failed
+    ].freeze
 
     def initialize(session:, projection:, runner: nil, max_turns: DEFAULT_MAX_TURNS, # rubocop:disable Metrics/ParameterLists
                    provider: nil, ingestor: nil, stream_provider: nil,
@@ -132,10 +141,20 @@ module Harnas
     def run_streaming_turn(request)
       @session.hooks.invoke(:pre_provider_call, session: @session, request: request)
       @stream_provider.call(request) do |event|
-        appended = @session.log.append(**event)
-        @on_stream_event&.call(appended) if STREAM_DELTA_TYPES.include?(appended.type)
+        handle_stream_event(event)
       end
       @session.hooks.invoke(:post_provider_call, session: @session, response: nil)
+    end
+
+    def handle_stream_event(event)
+      type = event.fetch(:type)
+      if STREAM_OBSERVATION_TYPES.include?(type)
+        observed = Event.new(seq: -1, id: "stream", type: type, payload: event.fetch(:payload))
+        @session.observation.emit(:stream_event, event: observed)
+        @on_stream_event&.call(observed) if STREAM_DELTA_TYPES.include?(type)
+      else
+        @session.log.append(**event)
+      end
     end
 
     def append_provider_error(error, attempt:, terminal:)
