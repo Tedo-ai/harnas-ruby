@@ -14,6 +14,13 @@ the specification as a whole.
 - Clarified `StaleReadGuard` refusal messages so LLM consumers know when
   to call `read_file` before retrying a write/edit.
 
+### Changed
+
+- Rebuilt the web monitor surface around Tailwind-loaded HTML,
+  extracted static CSS/ES module assets, and added strategy uninstall,
+  session-library quick load, keyboard shortcuts, save/load toasts, and
+  long-message expanders.
+
 ## [0.8.0] — 2026-05-03
 
 ### Reference implementation (Ruby)

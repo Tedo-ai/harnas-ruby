@@ -1,0 +1,499 @@
+  :root {
+    --bg:        #fafaf7;
+    --panel:     #ffffff;
+    --panel-2:   #f4f3ee;
+    --border:    #e6e4dc;
+    --text:      #2c2c2c;
+    --muted:     #8b8b85;
+    --accent:    #4a6da3;
+
+    --user:      #4a6da3;
+    --asst:      #8a6d3b;
+    --tool-use:  #a36b3a;
+    --tool-res:  #4f8569;
+    --summary:   #8b8b85;
+    --error:     #b04a3a;
+    --warn:      #c28a2c;
+    --annotation:#7b6f90;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    height: 100%; margin: 0;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 14px; line-height: 1.55;
+  }
+
+  header {
+    padding: 14px 22px; border-bottom: 1px solid var(--border);
+    display: flex; gap: 18px; align-items: baseline; flex-wrap: wrap;
+    background: var(--panel);
+  }
+  header .title { font-weight: 600; font-size: 15px; color: var(--text); }
+  header .meta  { color: var(--muted); font-size: 13px; }
+  header .meta strong { color: var(--text); font-weight: 500; }
+  header .status { margin-left: auto; color: var(--muted); font-size: 12px; }
+  header .status.connected { color: var(--text); }
+  header .status.error     { color: var(--error); }
+  header select {
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 4px;
+    font-family: inherit; font-size: 13px; padding: 3px 6px;
+  }
+  header select:focus { outline: none; border-color: var(--accent); }
+
+  main {
+    display: flex; flex-direction: column;
+    height: calc(100vh - 51px);
+    overflow: hidden;
+  }
+
+  /* Compact horizontal strip fused under the header. Tiny toggle
+     label flips between context and timeline data. Clicking a
+     block jumps to that event in the matching tab. */
+  #strip-wrap {
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 0 4px 10px; flex-shrink: 0;
+  }
+  #strip-toggle {
+    background: transparent; border: none; cursor: pointer;
+    color: var(--muted); font-size: 9.5px; letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-family: inherit; padding: 0 4px;
+    flex-shrink: 0;
+  }
+  #strip-toggle:hover { color: var(--text); }
+  #strip { flex: 1; height: 18px; display: block; }
+  #strip rect { cursor: pointer; }
+
+  /* Tab bar: one row of tabs full-width, active tab underlined. */
+  .tabs {
+    display: flex; gap: 0; border-bottom: 1px solid var(--border);
+    background: var(--panel); flex-shrink: 0;
+  }
+  .tabs .tab {
+    padding: 10px 18px;
+    background: transparent; border: none; cursor: pointer;
+    color: var(--muted); font-family: inherit; font-size: 12.5px;
+    border-bottom: 2px solid transparent;
+  }
+  .tabs .tab:hover { color: var(--text); }
+  .tabs .tab.active { color: var(--text); border-bottom-color: var(--accent); }
+
+  /* Each tab's content lives in its own panel. Exactly one visible
+     at a time. Panels fill the remaining vertical space; individual
+     panels control their own internal layout. */
+  .tab-content { flex: 1; min-height: 0; display: flex; }
+  .tab-panel { flex: 1; min-width: 0; overflow: hidden;
+               display: none; flex-direction: column; }
+  .tab-panel.active { display: flex; }
+
+  /* Chat tab: scrolling messages + input pinned at the bottom. */
+  #panel-chat #chat {
+    flex: 1; min-height: 0; overflow-y: auto;
+    padding: 22px 28px 10px;
+  }
+  #panel-chat #chat-input {
+    display: flex; gap: 8px; padding: 10px 28px 14px;
+    background: var(--panel); border-top: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  #panel-chat #chat-input input {
+    flex: 1; padding: 9px 14px; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); font-family: inherit; font-size: 14px;
+  }
+  #panel-chat #chat-input input:focus { outline: none; border-color: var(--accent); }
+  #panel-chat #chat-input button {
+    padding: 9px 20px; background: var(--text); color: var(--bg);
+    border: none; border-radius: 6px; cursor: pointer;
+    font-family: inherit; font-size: 14px;
+  }
+
+  /* Context / Timeline tabs share a detail-view layout:
+     legend across the top + scrollable list of rows below. */
+  .detail-view { display: flex; flex-direction: column;
+                 height: 100%; min-height: 0; }
+  .detail-header {
+    padding: 14px 24px 10px; border-bottom: 1px solid var(--border);
+    background: var(--panel); flex-shrink: 0;
+  }
+  .detail-intro { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+  .legend .lg-item {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11.5px; color: var(--text);
+  }
+  .legend .lg-swatch {
+    width: 12px; height: 12px; border-radius: 2px;
+    display: inline-block; flex-shrink: 0;
+  }
+  .legend .lg-item .lg-name { font-family: ui-monospace, Menlo, monospace; font-size: 11px; }
+  .legend .lg-item .lg-desc { color: var(--muted); font-size: 11px; }
+
+  .detail-list { flex: 1; overflow-y: auto; padding: 6px 0; }
+  .evt-row {
+    display: grid;
+    grid-template-columns: 6px 48px 180px 1fr;
+    gap: 10px; align-items: start;
+    padding: 8px 24px; border-bottom: 1px dotted var(--border);
+  }
+  .evt-row:hover { background: var(--panel-2); }
+  .evt-row.highlight { background: #fff4d1; }
+  .evt-row.dropped { opacity: 0.55; }
+  .evt-row.dropped .evt-body { color: var(--muted); font-style: italic; }
+
+  .evt-bar { width: 6px; min-height: 18px; border-radius: 2px; background: var(--border); }
+  .evt-seq { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; font-family: ui-monospace, Menlo, monospace; }
+  .evt-type { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; color: var(--text); }
+  .evt-type .desc { color: var(--muted); font-family: -apple-system, system-ui, sans-serif; font-size: 11px; display: block; margin-top: 2px; }
+  .evt-type .tag {
+    display: inline-block; margin-left: 6px; padding: 1px 6px;
+    font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.05em;
+    border-radius: 3px; border: 1px solid var(--summary); color: var(--summary);
+    font-family: -apple-system, system-ui, sans-serif;
+  }
+  .evt-type .tag.tag-dropped { border-color: var(--muted); color: var(--muted); }
+  .evt-type .tag.tag-mutation { border-color: var(--tool-use); color: var(--tool-use); }
+
+  .evt-body {
+    font-family: ui-monospace, Menlo, monospace; font-size: 12px;
+    color: #555; white-space: pre-wrap; word-break: break-word;
+    max-height: 8em; overflow: hidden;
+  }
+  .evt-body.expanded { max-height: none; }
+
+  /* Visually distinct treatment for compaction events in the
+     detail lists — these are the rows that REPLACE other events. */
+  .evt-row.is-summary .evt-bar { background: var(--summary); }
+  .evt-row.is-summary { border: 1px dashed var(--summary);
+                        margin: 6px 10px; border-radius: 4px;
+                        background: #fbf9f4; }
+  .evt-row.is-compact .evt-bar { background: var(--tool-use); }
+  .evt-row.is-compact { border-left: 3px solid var(--tool-use); background: #fdf7ef; }
+  .evt-row.is-provider-error.retry { background: #fff8e8; }
+  .evt-row.is-provider-error.fatal { background: #fff0ed; }
+  .evt-row.is-annotation { background: #f7f5fa; }
+  .evt-row.guard-marked { outline: 1px solid var(--warn); outline-offset: -2px; }
+
+  /* Transient streaming row: shown live in the timeline detail view
+     while a turn is in flight; removed when the consolidated
+     :assistant_message lands via the durable Log path. The dashed
+     border + muted background make it visually obvious that this row
+     is ephemeral, never persisted. */
+  .evt-row.is-transient {
+    border: 1px dashed var(--muted);
+    margin: 4px 10px; border-radius: 4px;
+    background: #fbfbfa;
+    opacity: 0.92;
+  }
+  .evt-row.is-transient .evt-bar { background: var(--muted); opacity: 0.55; }
+  .evt-row.is-transient .evt-seq { color: var(--muted); }
+  .evt-row.is-transient .evt-type .tag.tag-transient {
+    border-color: var(--muted); color: var(--muted);
+  }
+
+  /* Runtime + Config panels are simple scrollable blocks. Override
+     the panel's flex layout so overflow-y:auto works as expected. */
+  #panel-runtime.active,
+  #panel-config.active { display: block; overflow-y: auto; padding: 18px 24px; }
+
+  /* Chat messages: label is the only thing colored. Bubble is plain. */
+  .msg { margin-bottom: 18px; max-width: 760px; }
+  .msg .who {
+    font-size: 11px; text-transform: lowercase;
+    letter-spacing: 0.02em; color: var(--muted); margin-bottom: 4px;
+  }
+  .msg.user        .who { color: var(--user); }
+  .msg.assistant   .who { color: var(--asst); }
+  .msg.tool_use    .who { color: var(--tool-use); }
+  .msg.tool_result .who { color: var(--tool-res); }
+  .msg.summary     .who { color: var(--summary); }
+  .msg.error       .who { color: var(--error); }
+  .msg.error .body { color: var(--error); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  .msg.provider_error.retry .who { color: var(--warn); }
+  .msg.provider_error.fatal .who { color: var(--error); }
+  .msg .body {
+    white-space: pre-wrap; word-break: break-word;
+    color: var(--text);
+  }
+  .reasoning {
+    margin-bottom: 8px; color: #6f675b; border-left: 2px solid var(--asst);
+    padding-left: 10px; font-size: 12.5px; font-style: italic;
+  }
+  .reasoning summary { cursor: pointer; color: var(--asst); font-style: normal; }
+  .reasoning .sig { color: var(--muted); font-size: 11px; font-style: normal; }
+  .pill {
+    display: inline-block; margin: 4px 4px 0 0; padding: 1px 6px;
+    border-radius: 3px; border: 1px solid var(--border); color: var(--muted);
+    background: var(--panel-2); font-size: 11px; font-family: ui-monospace, Menlo, monospace;
+  }
+  .msg.summary   .body { color: var(--muted); font-style: italic; }
+  .msg.tool_use  .body, .msg.tool_result .body {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px; color: #555;
+  }
+
+  /* Runtime + Config panels share a few display primitives. */
+  .section-label {
+    color: var(--muted); font-size: 11px; letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-top: 18px; margin-bottom: 8px;
+  }
+  .section-label:first-child { margin-top: 0; }
+
+  .stats {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 24px;
+    max-width: 720px;
+  }
+  .stats .stat {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 8px 12px; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 4px;
+  }
+  .stats .stat .lbl { color: var(--muted); font-size: 11.5px; letter-spacing: 0.02em; }
+  .stats .stat .val { color: var(--text); font-size: 18px; font-weight: 500;
+                      font-variant-numeric: tabular-nums; font-family: ui-monospace, Menlo, monospace; }
+
+  /* Harness configuration panel */
+  #config { font-size: 12.5px; }
+  #config .cfg-row {
+    display: flex; gap: 8px; padding: 2px 0;
+    border-bottom: 1px dotted var(--border);
+  }
+  #config .cfg-row .k { color: var(--muted); min-width: 92px; }
+  #config .cfg-row .v { color: var(--text); font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; word-break: break-all; }
+  #config .cfg-sub {
+    color: var(--muted); font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    margin-top: 10px; margin-bottom: 4px;
+  }
+  #config ul.cfg-list { list-style: none; padding: 0; margin: 0; }
+  #config ul.cfg-list li {
+    padding: 3px 0; font-family: ui-monospace, Menlo, monospace;
+    font-size: 11.5px; color: var(--text);
+    border-bottom: 1px dotted var(--border);
+  }
+  #config ul.cfg-list li .detail { color: var(--muted); font-family: -apple-system, system-ui, sans-serif; font-size: 11px; margin-left: 6px; }
+  #config ul.cfg-list li .count  { color: var(--muted); font-size: 11px; margin-left: 4px; }
+  .cfg-controls {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px; max-width: 980px;
+  }
+  .cfg-box {
+    border: 1px solid var(--border); background: var(--panel);
+    border-radius: 6px; padding: 10px;
+  }
+  .cfg-box label { display: block; color: var(--muted); font-size: 11px; margin-top: 6px; }
+  .cfg-box input[type="number"], .cfg-box input[type="text"], .cfg-box textarea, .cfg-box select {
+    width: 100%; border: 1px solid var(--border); border-radius: 4px;
+    padding: 5px 7px; background: var(--bg); font: inherit; font-size: 12px;
+  }
+  .cfg-box textarea { min-height: 72px; resize: vertical; }
+  .cfg-box button, .cfg-actions button {
+    margin-top: 8px; border: 1px solid var(--border); background: var(--text);
+    color: var(--bg); border-radius: 4px; padding: 6px 9px; cursor: pointer;
+    font: inherit; font-size: 12px;
+  }
+  .cfg-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .tool-toggle { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; }
+  .tool-toggle .detail { color: var(--muted); font-size: 11px; }
+  #permission-modal {
+    position: fixed; right: 20px; bottom: 20px; width: min(460px, calc(100vw - 40px));
+    border: 1px solid var(--border); background: var(--panel); border-radius: 8px;
+    padding: 14px; box-shadow: 0 8px 30px rgba(0,0,0,0.12); display: none;
+    z-index: 10;
+  }
+  #permission-modal.active { display: block; }
+  #permission-modal pre { white-space: pre-wrap; word-break: break-word; max-height: 180px; overflow: auto; }
+  #permission-modal .actions { display: flex; justify-content: flex-end; gap: 8px; }
+  #permission-modal button { border: 1px solid var(--border); border-radius: 4px; padding: 6px 10px; cursor: pointer; }
+  #permission-modal .allow { background: var(--tool-res); color: white; }
+  #permission-modal .deny { background: var(--error); color: white; }
+  #events {
+    list-style: none; padding: 0; margin: 0; font-size: 12px;
+    max-width: 900px;
+  }
+  #events li {
+    padding: 5px 10px; color: var(--muted);
+    display: grid; grid-template-columns: 200px 1fr; gap: 14px;
+    border-bottom: 1px dotted var(--border);
+  }
+  #events .name {
+    color: var(--text); font-family: ui-monospace, Menlo, monospace;
+    font-size: 11.5px;
+  }
+  #events .meta { color: var(--muted); font-size: 11.5px;
+                  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #events .system, #events .error { font-style: italic; }
+  #events .error .name { color: var(--error); }
+
+/* Tailwind shell overrides. The legacy selectors above still style
+   event rows and bubbles; these rules stop the old page-level layout
+   from fighting the redesigned HTML structure. */
+header { display: block; padding: 0; border-bottom: 0; background: transparent; }
+main {
+  display: grid;
+  height: auto;
+  overflow: visible;
+  flex-direction: initial;
+}
+#strip-wrap { border-bottom: 0; background: transparent; padding: 0.5rem; }
+.tabs { border-bottom: 0; background: transparent; }
+.tabs .tab {
+  border-radius: 6px;
+  border: 1px solid transparent;
+  padding: 7px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.tabs .tab:hover { background: rgba(74, 109, 163, 0.08); }
+.tabs .tab.active {
+  border-color: rgba(74, 109, 163, 0.28);
+  background: rgba(74, 109, 163, 0.12);
+}
+.tab-content { display: block; height: 100%; }
+.tab-panel { display: none; }
+.tab-panel.active { display: flex; }
+@media (min-width: 1024px) {
+  #panel-chat { display: flex !important; }
+}
+#panel-runtime.active,
+#panel-config.active { padding: 1rem; }
+#panel-chat #chat { padding: 1rem; }
+#panel-chat #chat-input { padding: 0.75rem; }
+.msg {
+  max-width: 860px;
+  border-left: 3px solid transparent;
+  padding-left: 10px;
+}
+.msg.user { margin-left: auto; border-left-color: var(--user); }
+.msg.assistant { border-left-color: var(--asst); }
+.msg.tool_use { border-left-color: var(--tool-use); }
+.msg.tool_result { border-left-color: var(--tool-res); }
+.msg.provider_error { border-left-color: var(--error); }
+.msg .body {
+  border-radius: 8px;
+  background: rgba(244, 243, 238, 0.75);
+  padding: 8px 10px;
+}
+.msg.user .body { background: rgba(74, 109, 163, 0.08); }
+.msg.assistant .body { background: rgba(138, 109, 59, 0.09); }
+.msg.tool_use .body, .msg.tool_result .body { background: rgba(79, 133, 105, 0.08); }
+.expander {
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 4px 7px;
+  background: var(--panel);
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+.cfg-box-wide { grid-column: 1 / -1; }
+.cfg-note {
+  color: var(--muted);
+  font-size: 11.5px;
+  margin: 8px 0 0;
+}
+.strategy-chip {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+.strategy-chip button {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--error);
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+  padding: 2px 7px;
+}
+.session-list {
+  display: grid;
+  gap: 5px;
+  margin-top: 6px;
+  max-height: 220px;
+  overflow: auto;
+}
+.session-list.empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+.session-item {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  display: grid;
+  gap: 2px;
+  padding: 7px;
+  text-align: left;
+}
+.session-item:hover { border-color: var(--accent); }
+.session-item .name {
+  color: var(--text);
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.session-item .meta {
+  color: var(--muted);
+  font-size: 11px;
+}
+.toast {
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.14);
+  color: var(--text);
+  font-size: 13px;
+  padding: 10px 12px;
+}
+.toast.error { border-left-color: var(--error); }
+#permission-modal {
+  bottom: auto;
+  left: 1rem;
+  right: 1rem;
+  top: 6rem;
+  width: min(36rem, calc(100vw - 2rem));
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #151515;
+    --panel: #202020;
+    --panel-2: #2a2a2a;
+    --border: #333333;
+    --text: #ebe7dd;
+    --muted: #aaa39a;
+  }
+  .msg .body,
+  .session-item,
+  .evt-row.is-transient { background: #1b1b1b; }
+  .evt-row:hover { background: #252525; }
+  .evt-row.is-summary,
+  .evt-row.is-compact,
+  .evt-row.is-provider-error.retry,
+  .evt-row.is-provider-error.fatal,
+  .evt-row.is-annotation { background: #211f1b; }
+}
+
+@media (max-width: 899px) {
+  .evt-row {
+    grid-template-columns: 5px 40px 1fr;
+  }
+  .evt-body {
+    grid-column: 2 / -1;
+  }
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

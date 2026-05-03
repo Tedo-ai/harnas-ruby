@@ -195,6 +195,7 @@ SHARED_STATE = { # rubocop:disable Style/MutableConstant -- live web monitor sta
   system_prompt: nil,
   installed_strategy_names: [],
   installed_strategy_configs: [],
+  installed_strategy_handlers: [],
   permission_tools: DESTRUCTIVE_TOOLS.dup,
   pending_permission: nil
 }
@@ -467,7 +468,7 @@ def current_config_introspection # rubocop:disable Metrics/AbcSize,Metrics/Metho
     hooks: shared_session.hooks.handlers.each_with_object({}) do |(hook, handlers), h|
       h[hook.to_s] = handlers.size
     end,
-    strategies_installed: SHARED_STATE[:installed_strategy_names].dup,
+    strategies_installed: strategy_entries,
     max_turns: 6
   }
 end
@@ -484,31 +485,56 @@ def broadcast_config_changed
   BRIDGE.broadcast(kind: "config_changed", config: current_config_introspection)
 end
 
+def strategy_entries
+  SHARED_STATE[:installed_strategy_names].each_with_index.map do |name, index|
+    { index: index, label: name }
+  end
+end
+
 def install_strategy!(name, config, record: true)
   symbolized = config.transform_keys(&:to_sym)
-  case name
-  when "Compaction::MarkerTail"
-    Harnas::Strategies::Compaction::MarkerTail.install(shared_session, **symbolized)
-  when "Compaction::TokenMarkerTail"
-    Harnas::Strategies::Compaction::TokenMarkerTail.install(shared_session, **symbolized)
-  when "Compaction::ToolOutputCap"
-    Harnas::Strategies::Compaction::ToolOutputCap.install(shared_session, **symbolized)
-  when "Compaction::SummaryTail"
-    triplet = TRIPLETS.fetch(current_provider)
-    Harnas::Strategies::Compaction::SummaryTail.install(
-      shared_session,
-      projection: triplet.fetch(:projection),
-      provider: triplet.fetch(:provider),
-      ingestor: triplet.fetch(:ingestor),
-      **symbolized
-    )
-  else
-    raise ArgumentError, "unknown strategy #{name.inspect}"
-  end
+  handler = install_strategy_handler(name, symbolized)
 
   label = "#{name}(#{symbolized.map { |k, v| "#{k}=#{v.inspect}" }.join(", ")})"
   SHARED_STATE[:installed_strategy_names] << label
+  SHARED_STATE[:installed_strategy_handlers] << { point: :pre_projection, handler: handler }
   SHARED_STATE[:installed_strategy_configs] << { name: name, config: config } if record
+  label
+end
+
+def install_strategy_handler(name, config)
+  case name
+  when "Compaction::MarkerTail"
+    Harnas::Strategies::Compaction::MarkerTail.install(shared_session, **config)
+  when "Compaction::TokenMarkerTail"
+    Harnas::Strategies::Compaction::TokenMarkerTail.install(shared_session, **config)
+  when "Compaction::ToolOutputCap"
+    Harnas::Strategies::Compaction::ToolOutputCap.install(shared_session, **config)
+  when "Compaction::SummaryTail"
+    install_summary_tail(config)
+  else
+    raise ArgumentError, "unknown strategy #{name.inspect}"
+  end
+end
+
+def install_summary_tail(config)
+  triplet = TRIPLETS.fetch(current_provider)
+  Harnas::Strategies::Compaction::SummaryTail.install(
+    shared_session,
+    projection: triplet.fetch(:projection),
+    provider: triplet.fetch(:provider),
+    ingestor: triplet.fetch(:ingestor),
+    **config
+  )
+end
+
+def uninstall_strategy!(index)
+  handler_ref = SHARED_STATE[:installed_strategy_handlers].delete_at(index)
+  label = SHARED_STATE[:installed_strategy_names].delete_at(index)
+  SHARED_STATE[:installed_strategy_configs].delete_at(index)
+  return nil unless handler_ref && label
+
+  shared_session.hooks.off(handler_ref.fetch(:point), handler_ref.fetch(:handler))
   label
 end
 
@@ -552,13 +578,14 @@ def permission_decision_applied?(id, allow)
 end
 
 def install_permission_strategy!(record: true)
-  Harnas::Strategies::Permission::HumanApproval.install(
+  handler = Harnas::Strategies::Permission::HumanApproval.install(
     shared_session,
     prompt: method(:permission_prompt_for),
     denial_reason: "denied by web approval"
   )
   SHARED_STATE[:installed_strategy_names] <<
     "Permission::HumanApproval(#{SHARED_STATE[:permission_tools].join(", ")})"
+  SHARED_STATE[:installed_strategy_handlers] << { point: :pre_tool_use, handler: handler }
   return unless record
 
   SHARED_STATE[:installed_strategy_configs] << {
@@ -589,6 +616,7 @@ def reapply_installed_strategies!
   configs = SHARED_STATE[:installed_strategy_configs].dup
   SHARED_STATE[:installed_strategy_names] = []
   SHARED_STATE[:installed_strategy_configs] = []
+  SHARED_STATE[:installed_strategy_handlers] = []
   configs.each do |entry|
     if entry[:name] == "Permission::HumanApproval"
       install_permission_strategy!(record: true)
@@ -637,7 +665,65 @@ end
 # ──────────────────────────────────────────────────────────────────────
 INDEX_HTML_PATH  = File.expand_path("../web/index.html",  __dir__)
 AUTHOR_HTML_PATH = File.expand_path("../web/author.html", __dir__)
+WEB_DIR          = File.expand_path("../web", __dir__)
 EXAMPLES_DIR     = File.expand_path("../examples", __dir__)
+WEB_SESSION_DIR  = File.join(Dir.home, ".harnas", "web")
+
+def safe_web_session_path(path)
+  expanded = File.expand_path(path.to_s)
+  root = File.expand_path(WEB_SESSION_DIR)
+  return nil unless expanded.start_with?("#{root}/")
+  return nil unless File.file?(expanded)
+
+  expanded
+end
+
+def session_library
+  FileUtils.mkdir_p(WEB_SESSION_DIR)
+  Dir.glob(File.join(WEB_SESSION_DIR, "*.jsonl"))
+     .sort_by { |path| -File.mtime(path).to_f }
+     .map { |path| session_summary(path) }
+end
+
+def session_summary(path)
+  session_id = nil
+  event_count = 0
+  File.foreach(path).with_index do |line, index|
+    next if line.strip.empty?
+
+    data = JSON.parse(line)
+    if index.zero? && data["type"] == "session"
+      session_id = data["id"]
+    else
+      event_count += 1
+    end
+  rescue JSON::ParserError
+    next
+  end
+  {
+    path: path,
+    name: File.basename(path),
+    timestamp: File.mtime(path).utc.iso8601,
+    session: session_id,
+    bytes: File.size(path),
+    events: event_count
+  }
+end
+
+def serve_web_asset(path)
+  return [404, { "content-type" => "text/plain" }, ["not found"]] \
+    unless path.start_with?("#{WEB_DIR}/") && File.file?(path)
+
+  type = if path.end_with?(".css")
+           "text/css; charset=utf-8"
+         else
+           "text/javascript; charset=utf-8"
+         end
+  [200,
+   { "content-type" => type,
+     "cache-control" => "no-store, must-revalidate" },
+   [File.read(path)]]
+end
 
 APP = lambda do |env|
   if Faye::WebSocket.websocket?(env)
@@ -724,6 +810,18 @@ APP = lambda do |env|
         rescue StandardError => e
           BRIDGE.broadcast(kind: "error", message: "#{e.class}: #{e.message}")
         end
+      when "uninstall_strategy"
+        begin
+          label = uninstall_strategy!(Integer(data["index"]))
+          if label
+            broadcast_config_changed
+            BRIDGE.broadcast(kind: "system", message: "[uninstalled #{label}]")
+          else
+            BRIDGE.broadcast(kind: "error", message: "strategy not found")
+          end
+        rescue StandardError => e
+          BRIDGE.broadcast(kind: "error", message: "#{e.class}: #{e.message}")
+        end
       when "permission_decision"
         unless permission_decision_applied?(data["id"].to_s, data["allow"] == true)
           BRIDGE.broadcast(kind: "error", message: "permission request expired")
@@ -743,6 +841,10 @@ APP = lambda do |env|
        { "content-type" => "text/html; charset=utf-8",
          "cache-control" => "no-store, must-revalidate" },
        [File.read(INDEX_HTML_PATH)]]
+    when %r{\A/(styles\.css|js/[A-Za-z0-9_-]+\.js)\z}
+      name = Regexp.last_match(1)
+      path = File.expand_path(File.join(WEB_DIR, name))
+      serve_web_asset(path)
     when "/author"
       [200,
        { "content-type" => "text/html; charset=utf-8",
@@ -775,20 +877,37 @@ APP = lambda do |env|
          "cache-control" => "no-store" },
        [body]]
     when "/save"
-      dir = File.join(Dir.home, ".harnas", "web")
-      FileUtils.mkdir_p(dir)
-      path = File.join(dir, "#{Time.now.utc.strftime("%Y%m%dT%H%M%SZ")}-#{shared_session.id}.jsonl")
+      FileUtils.mkdir_p(WEB_SESSION_DIR)
+      filename = "#{Time.now.utc.strftime("%Y%m%dT%H%M%SZ")}-#{shared_session.id}.jsonl"
+      path = File.join(WEB_SESSION_DIR, filename)
       shared_session.save(path)
       [200,
        { "content-type" => "application/json",
          "cache-control" => "no-store" },
        [JSON.generate(path: path)]]
+    when "/sessions"
+      [200,
+       { "content-type" => "application/json",
+         "cache-control" => "no-store" },
+       [JSON.generate(sessions: session_library)]]
     when "/load"
       body = Rack::Request.new(env).body.read
-      Tempfile.create(["harnas-web-load", ".jsonl"]) do |tmp|
-        tmp.write(body)
-        tmp.flush
-        SHARED_STATE[:session] = Harnas::Session.load(tmp.path)
+      loaded = begin
+        JSON.parse(body)
+      rescue JSON::ParserError
+        nil
+      end
+      if loaded.is_a?(Hash) && loaded["path"]
+        path = safe_web_session_path(loaded["path"])
+        raise ArgumentError, "session path is outside #{WEB_SESSION_DIR}" unless path
+
+        SHARED_STATE[:session] = Harnas::Session.load(path)
+      else
+        Tempfile.create(["harnas-web-load", ".jsonl"]) do |tmp|
+          tmp.write(body)
+          tmp.flush
+          SHARED_STATE[:session] = Harnas::Session.load(tmp.path)
+        end
       end
       attach_web_observer!(shared_session)
       rebuild_registry!
