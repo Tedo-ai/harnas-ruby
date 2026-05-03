@@ -498,7 +498,16 @@
     // while a turn is streaming. Cleared on assistant_turn_completed
     // (the consolidated :assistant_message arrives via the durable Log
     // path and the normal renderer adds its row).
-    transientRows: []
+    transientRows: [],
+    // Live streaming turn — a parallel tracker that the strip-builders
+    // consult to render growing in-flight blocks. Distinct from
+    // state.log because v0.8 keeps streaming deltas off the durable
+    // Log; this is purely a UI scratchpad. Reset per turn.
+    streamingTurn: {
+      active: false,
+      asstChars: 0,         // accumulated assistant_text_delta chars
+      toolUses: {}          // tool_use_id -> { name, chars }
+    }
   };
 
   const $ = (id) => document.getElementById(id);
@@ -976,6 +985,8 @@
       state.deltaCount += 1;
       $("meta-deltas").textContent = "δ " + state.deltaCount;
       appendTransientTimelineRow(evt);
+      state.streamingTurn.asstChars += chunk.length;
+      scheduleRender({ strip: true });
       return;
     }
     if (evt.type === "assistant_turn_started") {
@@ -985,6 +996,8 @@
       $("meta-deltas").textContent = "δ 0";
       clearTransientTimelineRows();
       appendTransientTimelineRow(evt);
+      state.streamingTurn = { active: true, asstChars: 0, toolUses: {} };
+      scheduleRender({ strip: true });
       return;
     }
     if (evt.type === "assistant_turn_completed") {
@@ -992,6 +1005,12 @@
       state.streamingMsgEl = null;
       state.streamingMsgText = "";
       appendTransientTimelineRow(evt);
+      // Don't clear streamingTurn yet — the consolidated :assistant_message
+      // hasn't landed in the durable Log yet. Clearing here would leave
+      // the strip showing nothing for the duration of the in-progress
+      // turn until the consolidated message arrives. Instead, the
+      // appendLogEvent path clears the tracker when the real
+      // :assistant_message or :tool_use lands.
       return;
     }
     if (evt.type === "assistant_turn_failed") {
@@ -1001,15 +1020,25 @@
       state.streamingMsgEl = null;
       state.streamingMsgText = "";
       clearTransientTimelineRows();
+      state.streamingTurn.active = false;
+      scheduleRender({ strip: true });
       return;
     }
     if (evt.type === "tool_use_begin") {
       ensureToolBubble(evt.payload.tool_use_id, evt.payload.name);
+      state.streamingTurn.toolUses[evt.payload.tool_use_id] = {
+        name: evt.payload.name || "",
+        chars: (evt.payload.name || "").length
+      };
+      scheduleRender({ strip: true });
       return;
     }
     if (evt.type === "tool_use_argument_delta") {
       const t = ensureToolBubble(evt.payload.tool_use_id, null);
       t.argsText += (evt.payload.chunk || "");
+      const tracker = state.streamingTurn.toolUses[evt.payload.tool_use_id];
+      if (tracker) tracker.chars += (evt.payload.chunk || "").length;
+      scheduleRender({ strip: true });
       return;
     }
     if (evt.type === "tool_use_end") {
@@ -1103,9 +1132,12 @@
     // The consolidated turn outputs (:assistant_message and :tool_use)
     // arrive on the durable Log path. Once they land, the transient
     // streaming rows in the timeline have served their purpose — clear
-    // them so the consolidated row stands alone.
+    // them so the consolidated row stands alone, and clear the
+    // streamingTurn tracker so the strip stops drawing the synthetic
+    // in-flight block (the real one is now in state.log).
     if (evt.type === "assistant_message" || evt.type === "tool_use") {
       clearTransientTimelineRows();
+      state.streamingTurn = { active: false, asstChars: 0, toolUses: {} };
     }
 
     // ── text streaming ───────────────────────────────────────────
@@ -1690,7 +1722,7 @@
       }
     });
 
-    return log.map(evt => ({
+    const blocks = log.map(evt => ({
       type: evt.type,
       tokens: tokenWidth(evt),
       seq: evt.seq,
@@ -1701,6 +1733,31 @@
         ? evt.payload
         : null
     }));
+    appendStreamingTurnBlocks(blocks);
+    return blocks;
+  }
+
+  // Append synthetic in-flight blocks for the current streaming turn,
+  // if one is active. Used by both buildContextBlocks and
+  // buildTimelineBlocks so the strip grows visibly as deltas arrive
+  // even though the durable Log has nothing yet for this turn.
+  function appendStreamingTurnBlocks(result) {
+    if (!state.streamingTurn.active) return;
+    const t = state.streamingTurn;
+    if (t.asstChars > 0) {
+      result.push({
+        type: "assistant_message",
+        tokens: Math.max(1, Math.ceil(t.asstChars / 4)),
+        streaming: true
+      });
+    }
+    Object.values(t.toolUses).forEach(tu => {
+      result.push({
+        type: "tool_use",
+        tokens: Math.max(1, Math.ceil(tu.chars / 4)),
+        streaming: true
+      });
+    });
   }
 
   // Context: the projection. Apply :compact mutations. Collapse streaming
@@ -1823,6 +1880,7 @@
       }
     });
 
+    appendStreamingTurnBlocks(result);
     return result;
   }
 
