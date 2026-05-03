@@ -1,0 +1,50 @@
+{
+  "presets": [
+    {
+      "id": "coder",
+      "label": "Coder agent",
+      "description": "Coding prompt, all tools, approval on destructive tools.",
+      "system_prompt": "You are a careful coding assistant. Inspect the repository before changing code, keep edits scoped, run the relevant checks, and explain the result clearly.",
+      "enabled_tools": "all",
+      "permission_tools": ["run_shell", "write_file", "edit_file"],
+      "strategies": [
+        {
+          "name": "Compaction::MarkerTail",
+          "config": { "max_messages": 20, "keep_recent": 10 }
+        }
+      ]
+    },
+    {
+      "id": "conversation",
+      "label": "Conversation",
+      "description": "Minimal prompt with a small read-only tool surface.",
+      "system_prompt": "",
+      "enabled_tools": ["read_file", "glob"],
+      "permission_tools": [],
+      "strategies": []
+    },
+    {
+      "id": "qa",
+      "label": "QA agent",
+      "description": "Read-only code QA with summary compaction.",
+      "system_prompt": "You are a code QA agent. Prioritize bugs, regressions, edge cases, missing tests, and concrete file/line findings over broad commentary.",
+      "enabled_tools": ["read_file", "list_dir", "glob", "grep"],
+      "permission_tools": [],
+      "strategies": [
+        {
+          "name": "Compaction::SummaryTail",
+          "config": { "max_messages": 24, "keep_recent": 12 }
+        }
+      ]
+    },
+    {
+      "id": "blank",
+      "label": "Blank",
+      "description": "Clear prompt, tools, permissions, and strategies.",
+      "system_prompt": "",
+      "enabled_tools": [],
+      "permission_tools": [],
+      "strategies": []
+    }
+  ]
+}

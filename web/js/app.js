@@ -193,6 +193,78 @@
   }
 
   // ──── harness configuration panel ────
+  const STRATEGIES = {
+    "Compaction::MarkerTail": {
+      title: "MarkerTail",
+      family: "Compaction",
+      description: "Replaces older messages with a compact marker once the message count crosses a limit.",
+      when: "Use for cheap, deterministic context trimming when exact old content can be omitted.",
+      help: "Spec §05 Compaction. Tail selection keeps the recent end of the conversation.",
+      fields: [
+        { key: "max_messages", label: "max messages", type: "int", value: 20, help: "Compact once visible messages exceed this count." },
+        { key: "keep_recent", label: "keep recent", type: "int", value: 10, help: "Number of newest messages to keep verbatim." }
+      ]
+    },
+    "Compaction::SummaryTail": {
+      title: "SummaryTail",
+      family: "Compaction",
+      description: "Replaces older messages with an LLM-generated summary.",
+      when: "Use when fidelity matters and you can afford an extra round-trip per compaction.",
+      help: "Spec §05 Compaction. SummaryTail spawns a provider call to create the replacement summary.",
+      fields: [
+        { key: "max_messages", label: "max messages", type: "int", value: 24, help: "Summarize once visible messages exceed this count." },
+        { key: "keep_recent", label: "keep recent", type: "int", value: 12, help: "Number of newest messages to keep verbatim." }
+      ]
+    },
+    "Compaction::TokenMarkerTail": {
+      title: "TokenMarkerTail",
+      family: "Compaction",
+      description: "Uses estimated token pressure rather than message count, then replaces older messages with a marker.",
+      when: "Use for long mixed-size conversations where message count is a poor proxy for context cost.",
+      help: "Spec §05 Compaction. The threshold is a fraction of max_tokens.",
+      fields: [
+        { key: "max_tokens", label: "max tokens", type: "int", value: 100000, help: "Nominal context budget used by the trigger." },
+        { key: "threshold", label: "threshold", type: "threshold", value: 0.85, help: "Trigger when estimated tokens exceed this fraction of max_tokens." },
+        { key: "keep_recent", label: "keep recent", type: "int", value: 10, help: "Number of newest messages to keep verbatim." }
+      ]
+    },
+    "Compaction::ToolOutputCap": {
+      title: "ToolOutputCap",
+      family: "Compaction",
+      description: "Caps oversized tool results while preserving a prefix for context.",
+      when: "Use for coding agents that may read or generate very large files.",
+      help: "Spec §05 Compaction. This strategy targets tool_result payload size.",
+      fields: [
+        { key: "max_bytes", label: "max bytes", type: "int", value: 4096, help: "Tool outputs larger than this are capped." },
+        { key: "prefix_bytes", label: "prefix bytes", type: "int", value: 1024, help: "Bytes to keep from the beginning of capped output." }
+      ]
+    },
+    "Permission::HumanApproval": {
+      title: "HumanApproval",
+      family: "Permission",
+      description: "Pauses tool execution and asks the browser user to allow or deny selected tools.",
+      when: "Use for destructive tools like shell commands or file writes.",
+      help: "Permission strategy. The Log records the resulting tool_result decision.",
+      fields: [{ key: "tools", label: "gated tools", type: "tools", value: "" }]
+    }
+  };
+
+  const TOOL_GROUPS = [
+    { label: "Read-only", names: ["read_file", "list_dir", "glob", "grep"], note: "Safe context gathering." },
+    { label: "File-mutating", names: ["write_file", "edit_file"], note: "Gated by HumanApproval when active.", destructive: true },
+    { label: "Shell", names: ["run_shell"], note: "Gated by HumanApproval when active.", destructive: true },
+    { label: "Network", names: ["fetch_url"], note: "External reads." }
+  ];
+  const READ_ONLY_TOOLS = ["read_file", "list_dir", "glob", "grep"];
+  const DESTRUCTIVE_TOOLS = ["run_shell", "write_file", "edit_file"];
+  const SYSTEM_PROMPTS = {
+    blank: "",
+    coding: "You are a careful coding assistant. Inspect the repository before changing code, keep edits scoped, run the relevant checks, and explain the result clearly.",
+    general: "You are a concise, helpful assistant. Answer directly, ask only when blocked, and keep enough context visible for the user to trust the result.",
+    qa: "You are a code QA agent. Prioritize bugs, regressions, edge cases, missing tests, and concrete file/line findings over broad commentary."
+  };
+  let configPresets = null;
+
   function renderConfig(cfg) {
     state.config = cfg;
     const root = $("config");
@@ -200,204 +272,453 @@
     if (!cfg) return;
 
     renderConfigControls(root, cfg);
-
-    // Provider details
-    if (cfg.provider) {
-      row(root, "provider",   cfg.provider.kind + " (" + (cfg.provider.streaming ? "streaming" : "buffered") + ")");
-      row(root, "model",      cfg.provider.model);
-      row(root, "projection", cfg.provider.projection_class);
-    }
-    row(root, "system", cfg.system_prompt || "(none)");
-    row(root, "max_turns", cfg.max_turns);
-
-    // Tools (Layer 3 registry)
-    if (cfg.tools && cfg.tools.length) {
-      sub(root, "tools · " + cfg.tools.length);
-      const ul = document.createElement("ul");
-      ul.className = "cfg-list";
-      cfg.tools.forEach(t => {
-        const li = document.createElement("li");
-        const name = document.createElement("span");
-        name.textContent = (t.enabled ? "✓ " : "× ") + t.name;
-        const detail = document.createElement("span");
-        detail.className = "detail";
-        detail.textContent = (t.approval_required ? "approval · " : "") + (t.description || "");
-        li.appendChild(name);
-        li.appendChild(detail);
-        ul.appendChild(li);
-      });
-      root.appendChild(ul);
-    } else {
-      sub(root, "tools");
-      row(root, "", "(no tools registered)");
-    }
-
-    // Strategies (Layer 2 canonical)
-    const strategies = (cfg.strategies_installed || []).map((s, i) => {
-      if (typeof s === "string") return { index: i, label: s };
-      return { index: s.index ?? i, label: s.label || String(s) };
-    });
-    sub(root, "strategies · " + strategies.length);
-    if (strategies.length === 0) {
-      row(root, "", "(none installed)");
-    } else {
-      const ul = document.createElement("ul");
-      ul.className = "cfg-list";
-      strategies.forEach(s => {
-        const li = document.createElement("li");
-        li.className = "strategy-chip";
-        const label = document.createElement("span");
-        label.textContent = s.label;
-        const remove = document.createElement("button");
-        remove.type = "button";
-        remove.title = "uninstall strategy";
-        remove.textContent = "×";
-        remove.onclick = () => ws.sendJSON({ kind: "uninstall_strategy", index: s.index });
-        li.appendChild(label);
-        li.appendChild(remove);
-        ul.appendChild(li);
-      });
-      root.appendChild(ul);
-    }
-
-    // Hooks (Layer 1 attachment points — count of handlers registered)
-    sub(root, "hooks");
-    const hooks = cfg.hooks || {};
-    const names = Object.keys(hooks).sort();
-    if (names.length === 0) {
-      row(root, "", "(no handlers registered)");
-    } else {
-      const ul = document.createElement("ul");
-      ul.className = "cfg-list";
-      names.forEach(h => {
-        const li = document.createElement("li");
-        const name = document.createElement("span");
-        name.textContent = ":" + h;
-        const count = document.createElement("span");
-        count.className = "count";
-        count.textContent = "× " + hooks[h];
-        li.appendChild(name);
-        li.appendChild(count);
-        ul.appendChild(li);
-      });
-      root.appendChild(ul);
-    }
+    ensurePresetsLoaded();
   }
 
   function renderConfigControls(root, cfg) {
-    sub(root, "session");
-    const controls = document.createElement("div");
-    controls.className = "cfg-controls";
+    const enabledTools = (cfg.tools || []).filter(t => t.enabled).length;
+    const strategies = strategiesFromConfig(cfg);
+    const summary = document.createElement("div");
+    summary.className = "cfg-summary";
+    summary.textContent =
+      `${cfg.provider.kind}/${cfg.provider.model} · ${enabledTools} tools · ` +
+      `${strategies.length} strategies · system prompt: ${(cfg.system_prompt || "").length} chars`;
+    root.appendChild(summary);
 
-    const session = document.createElement("div");
-    session.className = "cfg-box cfg-box-wide";
-    session.innerHTML = `
-      <strong>session</strong>
-      <div class="cfg-actions">
-        <button id="cfg-save">save session</button>
-        <input id="cfg-load" type="file" accept=".jsonl,application/jsonl,text/plain">
-      </div>
-      <div id="cfg-save-result" class="detail"></div>
-      <div class="cfg-sub">session library</div>
-      <div id="cfg-sessions" class="session-list empty">loading…</div>`;
-    controls.appendChild(session);
+    const presets = section("Presets", "One-click starting points. You can adjust every choice after applying.");
+    const presetRow = document.createElement("div");
+    presetRow.className = "preset-row";
+    (configPresets || fallbackPresets()).forEach(preset => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "preset-button";
+      button.innerHTML = `<strong></strong><span></span>`;
+      button.querySelector("strong").textContent = preset.label;
+      button.querySelector("span").textContent = preset.description || "";
+      button.onclick = () => applyPreset(preset);
+      presetRow.appendChild(button);
+    });
+    presets.appendChild(presetRow);
+    root.appendChild(presets);
 
-    const strategy = document.createElement("div");
-    strategy.className = "cfg-box";
-    strategy.innerHTML = `
-      <strong>install strategy</strong>
-      <label>strategy</label>
-      <select id="cfg-strategy">
-        <option value="Compaction::MarkerTail">MarkerTail</option>
-        <option value="Compaction::SummaryTail">SummaryTail (LLM summary sub-round-trip)</option>
-        <option value="Compaction::TokenMarkerTail">TokenMarkerTail</option>
-        <option value="Compaction::ToolOutputCap">ToolOutputCap</option>
-      </select>
-      <label>max_messages</label><input id="cfg-max-messages" type="number" value="12">
-      <label>keep_recent</label><input id="cfg-keep-recent" type="number" value="6">
-      <label>max_tokens</label><input id="cfg-max-tokens" type="number" value="100000">
-      <label>threshold</label><input id="cfg-threshold" type="text" value="0.85">
-      <label>max_bytes</label><input id="cfg-max-bytes" type="number" value="4096">
-      <label>prefix_bytes</label><input id="cfg-prefix-bytes" type="number" value="1024">
-      <p class="cfg-note">Installing multiple strategies in the same family registers both on :pre_projection; the first-registered one wins on overlapping ranges. To compare, install one at a time.</p>
-      <button id="cfg-install-strategy">install</button>`;
-    controls.appendChild(strategy);
+    root.appendChild(renderProviderModelSection(cfg));
+    root.appendChild(renderSystemSection(cfg));
+    root.appendChild(renderToolsSection(cfg));
+    root.appendChild(renderStrategiesSection(cfg, strategies));
+    root.appendChild(renderSessionSection());
 
-    const tools = document.createElement("div");
-    tools.className = "cfg-box";
-    tools.innerHTML = '<strong>built-in tools</strong><div id="cfg-tools"></div>';
-    controls.appendChild(tools);
-
-    const system = document.createElement("div");
-    system.className = "cfg-box cfg-box-wide";
-    system.innerHTML = '<strong>system prompt</strong><label>prompt</label><textarea id="cfg-system"></textarea><button id="cfg-system-save">apply</button>';
-    controls.appendChild(system);
-
-    root.appendChild(controls);
-
-    $("cfg-system").value = cfg.system_prompt || "";
-    $("cfg-system-save").onclick = () => {
-      ws.sendJSON({ kind: "set_system_prompt", text: $("cfg-system").value });
-    };
-    $("cfg-install-strategy").onclick = () => installStrategyFromForm();
     $("cfg-save").onclick = saveSession;
     $("cfg-load").onchange = loadSession;
     loadSessionLibrary();
+  }
 
-    const toolRoot = $("cfg-tools");
-    (cfg.tools || []).forEach(t => {
-      const wrap = document.createElement("label");
-      wrap.className = "tool-toggle";
-      const enabled = document.createElement("input");
-      enabled.type = "checkbox";
-      enabled.checked = !!t.enabled;
-      enabled.onchange = () => ws.sendJSON({
-        kind: "toggle_tool",
-        name: t.name,
-        enabled: enabled.checked
-      });
-      const approval = document.createElement("input");
-      approval.type = "checkbox";
-      approval.checked = !!t.approval_required;
-      approval.title = "Require HumanApproval";
-      approval.onchange = () => {
-        const names = (state.config.tools || [])
-          .filter(x => (x.name === t.name ? approval.checked : x.approval_required))
-          .map(x => x.name);
-        ws.sendJSON({ kind: "set_permission_tools", names: names });
-      };
-      const text = document.createElement("span");
-      text.innerHTML = '<strong></strong> <span class="detail"></span>';
-      text.querySelector("strong").textContent = t.name;
-      text.querySelector(".detail").textContent = t.destructive ? "destructive" : "";
-      wrap.appendChild(enabled);
-      wrap.appendChild(approval);
-      wrap.appendChild(text);
-      toolRoot.appendChild(wrap);
+  function renderProviderModelSection(cfg) {
+    const box = section("Provider & Model", "Switch the provider for the next turn and override the model sent in projections.");
+    box.innerHTML += `
+      <div class="cfg-grid-two">
+        <label>provider<select id="cfg-provider"></select></label>
+        <label>model<input id="cfg-model" type="text"></label>
+      </div>
+      <button id="cfg-model-save" type="button">apply provider/model</button>`;
+    const provider = box.querySelector("#cfg-provider");
+    document.querySelectorAll("#provider-select option").forEach(opt => {
+      const copy = opt.cloneNode(true);
+      copy.selected = opt.value === cfg.provider.kind;
+      provider.appendChild(copy);
     });
+    box.querySelector("#cfg-model").value = cfg.provider.model || "";
+    box.querySelector("#cfg-model-save").onclick = () => {
+      const selected = box.querySelector("#cfg-provider").value;
+      const model = box.querySelector("#cfg-model").value.trim();
+      if (selected && selected !== cfg.provider.kind) ws.sendJSON({ kind: "set_provider", provider: selected });
+      if (model) ws.sendJSON({ kind: "set_model", provider: selected || cfg.provider.kind, model });
+      showToast("provider configuration queued");
+    };
+    return box;
+  }
+
+  function renderSystemSection(cfg) {
+    const box = section("System prompt", "Set behavior that every provider projection includes with the conversation.");
+    box.innerHTML += `
+      <label>preset
+        <select id="cfg-system-preset">
+          <option value="">choose a prompt…</option>
+          <option value="coding">coding assistant</option>
+          <option value="general">general assistant</option>
+          <option value="qa">QA agent</option>
+          <option value="blank">blank</option>
+        </select>
+      </label>
+      <label>prompt<textarea id="cfg-system"></textarea></label>
+      <div class="cfg-inline-meta">
+        <span id="cfg-system-count">0 chars</span>
+        <span id="cfg-system-warning"></span>
+      </div>
+      <div class="cfg-actions">
+        <button id="cfg-system-save" type="button">apply prompt</button>
+        <button id="cfg-system-revert" type="button" class="secondary">revert to default</button>
+      </div>`;
+    const textarea = box.querySelector("#cfg-system");
+    const count = box.querySelector("#cfg-system-count");
+    const warning = box.querySelector("#cfg-system-warning");
+    const updateCount = () => {
+      const chars = textarea.value.length;
+      count.textContent = `${chars} chars`;
+      warning.textContent = chars >= 4000 ? "very long prompts increase per-turn token cost" : "";
+    };
+    textarea.value = cfg.system_prompt || "";
+    textarea.addEventListener("input", updateCount);
+    updateCount();
+    box.querySelector("#cfg-system-preset").onchange = (e) => {
+      if (!e.target.value) return;
+      textarea.value = SYSTEM_PROMPTS[e.target.value] || "";
+      updateCount();
+    };
+    box.querySelector("#cfg-system-save").onclick = () => {
+      ws.sendJSON({ kind: "set_system_prompt", text: textarea.value });
+      showToast("system prompt applied");
+    };
+    box.querySelector("#cfg-system-revert").onclick = () => {
+      textarea.value = "";
+      updateCount();
+      ws.sendJSON({ kind: "set_system_prompt", text: "" });
+      showToast("system prompt cleared");
+    };
+    return box;
+  }
+
+  function renderToolsSection(cfg) {
+    const box = section("Tools", "Enable the tools this session may expose to the model.");
+    const actions = document.createElement("div");
+    actions.className = "cfg-actions";
+    actions.appendChild(actionButton("enable all", () => setToolSet((cfg.tools || []).map(t => t.name))));
+    actions.appendChild(actionButton("disable destructive", () => {
+      const names = (cfg.tools || []).filter(t => !DESTRUCTIVE_TOOLS.includes(t.name)).map(t => t.name);
+      setToolSet(names);
+    }));
+    actions.appendChild(actionButton("minimal read-only set", () => setToolSet(READ_ONLY_TOOLS)));
+    box.appendChild(actions);
+
+    const byName = Object.fromEntries((cfg.tools || []).map(t => [t.name, t]));
+    TOOL_GROUPS.forEach(group => {
+      const groupEl = document.createElement("div");
+      groupEl.className = "tool-group";
+      groupEl.innerHTML = `<div class="tool-group-head"><strong></strong><span></span></div>`;
+      groupEl.querySelector("strong").textContent = group.label;
+      groupEl.querySelector("span").textContent = group.note;
+      group.names.forEach(name => {
+        const t = byName[name];
+        if (!t) return;
+        const wrap = document.createElement("label");
+        wrap.className = "tool-toggle";
+        const enabled = document.createElement("input");
+        enabled.type = "checkbox";
+        enabled.checked = !!t.enabled;
+        enabled.onchange = () => toggleTool(t.name, enabled.checked);
+        const text = document.createElement("span");
+        text.innerHTML = '<strong></strong> <span class="safety"></span><span class="detail"></span>';
+        text.querySelector("strong").textContent = t.name;
+        const safety = text.querySelector(".safety");
+        if (t.approval_required) {
+          safety.textContent = "gated";
+          safety.title = "Permission::HumanApproval gates this tool.";
+        } else if (t.destructive || group.destructive) {
+          safety.textContent = "destructive";
+          safety.classList.add("warn");
+        }
+        text.querySelector(".detail").textContent = t.description || "";
+        wrap.appendChild(enabled);
+        wrap.appendChild(text);
+        groupEl.appendChild(wrap);
+      });
+      box.appendChild(groupEl);
+    });
+    return box;
+  }
+
+  function renderStrategiesSection(cfg, strategies) {
+    const box = section("Strategies", "Install compaction and permission behavior on this Session.");
+    const active = document.createElement("div");
+    active.className = "active-strategies";
+    active.innerHTML = "<div class=\"cfg-mini-title\">active</div>";
+    if (strategies.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "cfg-note";
+      empty.textContent = "No strategies installed.";
+      active.appendChild(empty);
+    } else {
+      strategies.forEach(s => active.appendChild(strategyCard(s)));
+    }
+    box.appendChild(active);
+
+    const install = document.createElement("div");
+    install.className = "strategy-install";
+    install.innerHTML = `
+      <div class="cfg-mini-title">install strategy</div>
+      <label>strategy<select id="cfg-strategy"></select></label>
+      <div id="cfg-strategy-copy" class="strategy-copy"></div>
+      <div id="cfg-strategy-fields" class="cfg-grid-two"></div>
+      <div id="cfg-strategy-error" class="cfg-error"></div>
+      <p class="cfg-note">Installing multiple strategies in the same family registers both on :pre_projection; the first-registered one wins on overlapping ranges. To compare, install one at a time.</p>
+      <button id="cfg-install-strategy" type="button">install</button>`;
+    box.appendChild(install);
+
+    const select = install.querySelector("#cfg-strategy");
+    Object.entries(STRATEGIES).forEach(([name, meta]) => {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = `${meta.family} · ${meta.title}`;
+      select.appendChild(opt);
+    });
+    const refresh = () => renderStrategyFields(select.value, install);
+    select.addEventListener("change", refresh);
+    refresh();
+    install.querySelector("#cfg-install-strategy").onclick = () => installStrategyFromForm();
+    return box;
+  }
+
+  function renderSessionSection() {
+    const box = section("Session", "Save the durable Log or load a previous web-monitor run.");
+    box.innerHTML += `
+      <div class="cfg-actions">
+        <button id="cfg-save" type="button">save session</button>
+        <input id="cfg-load" type="file" accept=".jsonl,application/jsonl,text/plain">
+      </div>
+      <div id="cfg-save-result" class="detail"></div>
+      <div class="cfg-mini-title">session library</div>
+      <div id="cfg-sessions" class="session-list empty">loading…</div>`;
+    return box;
   }
 
   function installStrategyFromForm() {
     const name = $("cfg-strategy").value;
+    if (!validateStrategyForm(name)) return;
     let config = {};
-    if (name === "Compaction::MarkerTail" || name === "Compaction::SummaryTail") {
-      config = {
-        max_messages: Number($("cfg-max-messages").value),
-        keep_recent: Number($("cfg-keep-recent").value)
-      };
-    } else if (name === "Compaction::TokenMarkerTail") {
-      config = {
-        max_tokens: Number($("cfg-max-tokens").value),
-        threshold: Number($("cfg-threshold").value),
-        keep_recent: Number($("cfg-keep-recent").value)
-      };
-    } else if (name === "Compaction::ToolOutputCap") {
-      config = {
-        max_bytes: Number($("cfg-max-bytes").value),
-        prefix_bytes: Number($("cfg-prefix-bytes").value)
-      };
+    STRATEGIES[name].fields.forEach(field => {
+      if (field.type === "tools") {
+        config.tools = checkedStrategyTools();
+      } else {
+        config[field.key] = field.type === "threshold"
+          ? Number($(`cfg-field-${field.key}`).value)
+          : Number.parseInt($(`cfg-field-${field.key}`).value, 10);
+      }
+    });
+    if (name === "Permission::HumanApproval") {
+      ws.sendJSON({ kind: "set_permission_tools", names: config.tools });
     }
     ws.sendJSON({ kind: "install_strategy", name: name, config: config });
+    showToast(`installing ${STRATEGIES[name].title}`);
+  }
+
+  function section(title, description) {
+    const box = document.createElement("section");
+    box.className = "cfg-section";
+    const header = document.createElement("div");
+    header.className = "cfg-section-header";
+    header.innerHTML = "<h3></h3><p></p>";
+    header.querySelector("h3").textContent = title;
+    header.querySelector("p").textContent = description;
+    box.appendChild(header);
+    return box;
+  }
+
+  function actionButton(label, fn) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    button.onclick = fn;
+    return button;
+  }
+
+  function strategiesFromConfig(cfg) {
+    return (cfg.strategies_installed || []).map((s, i) => {
+      const label = typeof s === "string" ? s : (s.label || String(s));
+      const name = Object.keys(STRATEGIES).find(key => label.startsWith(key)) || label.split("(")[0];
+      return {
+        index: typeof s === "object" && s.index != null ? s.index : i,
+        label,
+        name,
+        title: STRATEGIES[name] ? STRATEGIES[name].title : name,
+        configText: label.includes("(") ? label.slice(label.indexOf("(") + 1, -1) : ""
+      };
+    });
+  }
+
+  function strategyCard(strategy) {
+    const card = document.createElement("div");
+    card.className = "strategy-card";
+    const meta = STRATEGIES[strategy.name] || {};
+    card.innerHTML = `
+      <div>
+        <strong title=""></strong>
+        <span></span>
+      </div>
+      <button type="button" title="uninstall strategy">×</button>`;
+    card.querySelector("strong").textContent = strategy.name;
+    card.querySelector("strong").title = meta.help || "";
+    card.querySelector("span").textContent = strategy.configText || meta.description || "";
+    card.querySelector("button").onclick = () => ws.sendJSON({
+      kind: "uninstall_strategy",
+      index: strategy.index
+    });
+    return card;
+  }
+
+  function renderStrategyFields(name, scope = document) {
+    const meta = STRATEGIES[name];
+    const copy = scope.querySelector("#cfg-strategy-copy");
+    const fields = scope.querySelector("#cfg-strategy-fields");
+    copy.innerHTML = `<p>${meta.description}</p><p><strong>When:</strong> ${meta.when} <span class="help-dot" tabindex="0" title="${meta.help}">?</span></p>`;
+    fields.innerHTML = "";
+    meta.fields.forEach(field => {
+      if (field.type === "tools") {
+        fields.appendChild(renderStrategyToolPicker());
+        return;
+      }
+      const label = document.createElement("label");
+      label.innerHTML = `<span></span><input id="cfg-field-${field.key}" type="${field.type === "threshold" ? "text" : "number"}" value="${field.value}"><small></small>`;
+      label.querySelector("span").textContent = field.label;
+      label.querySelector("span").title = field.help;
+      label.querySelector("small").textContent = field.help;
+      label.querySelector("input").addEventListener("input", () => validateStrategyForm(name));
+      fields.appendChild(label);
+    });
+    validateStrategyForm(name, scope);
+  }
+
+  function renderStrategyToolPicker() {
+    const wrap = document.createElement("div");
+    wrap.className = "strategy-tool-picker";
+    wrap.innerHTML = "<div class=\"cfg-mini-title\">tools to gate</div>";
+    (state.config.tools || []).forEach(tool => {
+      const label = document.createElement("label");
+      label.className = "tool-toggle";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.value = tool.name;
+      checkbox.checked = tool.approval_required || DESTRUCTIVE_TOOLS.includes(tool.name);
+      const span = document.createElement("span");
+      span.textContent = tool.name;
+      label.appendChild(checkbox);
+      label.appendChild(span);
+      wrap.appendChild(label);
+    });
+    return wrap;
+  }
+
+  function validateStrategyForm(name, scope = document) {
+    const meta = STRATEGIES[name];
+    const error = scope.querySelector("#cfg-strategy-error");
+    const install = scope.querySelector("#cfg-install-strategy");
+    if (!meta || !error || !install) return false;
+
+    const messages = [];
+    meta.fields.forEach(field => {
+      if (field.type === "tools") {
+        if (checkedStrategyTools().length === 0) messages.push("Choose at least one tool to gate.");
+        return;
+      }
+      const input = scope.querySelector(`#cfg-field-${field.key}`);
+      const value = Number(input.value);
+      let ok = Number.isFinite(value);
+      if (field.type === "threshold") ok = ok && value > 0 && value < 1;
+      else ok = ok && Number.isInteger(value) && value > 0;
+      input.classList.toggle("invalid", !ok);
+      if (!ok) {
+        messages.push(field.type === "threshold"
+          ? `${field.label} must be greater than 0 and less than 1.`
+          : `${field.label} must be a positive integer.`);
+      }
+    });
+    error.textContent = messages.join(" ");
+    install.disabled = messages.length > 0;
+    return messages.length === 0;
+  }
+
+  function checkedStrategyTools() {
+    return Array.from(document.querySelectorAll(".strategy-tool-picker input:checked"))
+      .map(input => input.value);
+  }
+
+  function toggleTool(name, enabled) {
+    if (state.streamingTurn.active) showToast("tool is in use, change will apply next turn");
+    ws.sendJSON({ kind: "toggle_tool", name, enabled });
+  }
+
+  function setToolSet(names) {
+    const wanted = new Set(names);
+    if (state.streamingTurn.active) showToast("tool is in use, change will apply next turn");
+    (state.config.tools || []).forEach(tool => {
+      if (!!tool.enabled !== wanted.has(tool.name)) {
+        ws.sendJSON({ kind: "toggle_tool", name: tool.name, enabled: wanted.has(tool.name) });
+      }
+    });
+  }
+
+  async function ensurePresetsLoaded() {
+    if (configPresets) return;
+    try {
+      const res = await fetch("/presets.json");
+      const data = await res.json();
+      configPresets = data.presets || [];
+      if (state.config) renderConfig(state.config);
+    } catch (_e) {
+      configPresets = fallbackPresets();
+    }
+  }
+
+  function fallbackPresets() {
+    return [
+      {
+        id: "coder", label: "Coder agent", description: "Coding prompt, all tools, approval on destructive tools.",
+        system_prompt: SYSTEM_PROMPTS.coding,
+        enabled_tools: "all",
+        permission_tools: DESTRUCTIVE_TOOLS,
+        strategies: [{ name: "Compaction::MarkerTail", config: { max_messages: 20, keep_recent: 10 } }]
+      },
+      {
+        id: "conversation", label: "Conversation", description: "Small read-only surface for lightweight chat.",
+        system_prompt: "",
+        enabled_tools: ["read_file", "glob"],
+        permission_tools: [],
+        strategies: []
+      },
+      {
+        id: "qa", label: "QA agent", description: "Read-only code review with summary compaction.",
+        system_prompt: SYSTEM_PROMPTS.qa,
+        enabled_tools: READ_ONLY_TOOLS,
+        permission_tools: [],
+        strategies: [{ name: "Compaction::SummaryTail", config: { max_messages: 24, keep_recent: 12 } }]
+      },
+      {
+        id: "blank", label: "Blank", description: "Clear prompt, tools, and strategies.",
+        system_prompt: "",
+        enabled_tools: [],
+        permission_tools: [],
+        strategies: []
+      }
+    ];
+  }
+
+  function applyPreset(preset) {
+    const tools = preset.enabled_tools === "all"
+      ? (state.config.tools || []).map(t => t.name)
+      : (preset.enabled_tools || []);
+    strategiesFromConfig(state.config).slice().reverse().forEach(strategy => {
+      ws.sendJSON({ kind: "uninstall_strategy", index: strategy.index });
+    });
+    ws.sendJSON({ kind: "set_system_prompt", text: preset.system_prompt || "" });
+    (state.config.tools || []).forEach(tool => {
+      ws.sendJSON({ kind: "toggle_tool", name: tool.name, enabled: tools.includes(tool.name) });
+    });
+    ws.sendJSON({ kind: "set_permission_tools", names: preset.permission_tools || [] });
+    (preset.strategies || []).forEach(strategy => {
+      ws.sendJSON({ kind: "install_strategy", name: strategy.name, config: strategy.config || {} });
+    });
+    if ((preset.permission_tools || []).length) {
+      ws.sendJSON({ kind: "install_strategy", name: "Permission::HumanApproval", config: { tools: preset.permission_tools } });
+    }
+    showToast(`Applied preset: ${preset.label}`);
   }
 
   async function saveSession() {

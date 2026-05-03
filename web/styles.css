@@ -394,6 +394,246 @@ main {
   font-size: 12px;
 }
 .cfg-box-wide { grid-column: 1 / -1; }
+.cfg-summary {
+  background: rgba(74, 109, 163, 0.08);
+  border: 1px solid rgba(74, 109, 163, 0.22);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  padding: 9px 11px;
+}
+.cfg-section {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  padding: 12px;
+}
+.cfg-section-header {
+  margin-bottom: 10px;
+}
+.cfg-section-header h3 {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0;
+}
+.cfg-section-header p {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 2px 0 0;
+}
+.cfg-grid-two {
+  display: grid;
+  gap: 9px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+.cfg-section label {
+  color: var(--muted);
+  display: block;
+  font-size: 11.5px;
+  margin-top: 7px;
+}
+.cfg-section input[type="number"],
+.cfg-section input[type="text"],
+.cfg-section textarea,
+.cfg-section select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  display: block;
+  font: inherit;
+  margin-top: 3px;
+  padding: 7px 8px;
+  width: 100%;
+}
+.cfg-section input.invalid {
+  border-color: var(--error);
+  box-shadow: 0 0 0 2px rgba(176, 74, 58, 0.12);
+}
+.cfg-section textarea {
+  min-height: 112px;
+  resize: vertical;
+}
+.cfg-section small {
+  color: var(--muted);
+  display: block;
+  font-size: 10.5px;
+  line-height: 1.35;
+  margin-top: 2px;
+}
+.cfg-section button,
+.preset-button {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  padding: 7px 10px;
+}
+.cfg-section button {
+  background: var(--text);
+  color: var(--bg);
+}
+.cfg-section button.secondary {
+  background: var(--panel);
+  color: var(--text);
+}
+.cfg-section button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.preset-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+.preset-button {
+  background: var(--bg);
+  color: var(--text);
+  display: grid;
+  gap: 2px;
+  min-height: 70px;
+  text-align: left;
+}
+.preset-button:hover,
+.strategy-card:hover,
+.tool-toggle:hover {
+  border-color: rgba(74, 109, 163, 0.45);
+}
+.preset-button span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.cfg-inline-meta {
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  gap: 10px;
+  margin-top: 6px;
+}
+#cfg-system-warning,
+.cfg-error {
+  color: var(--error);
+}
+.cfg-error {
+  font-size: 11.5px;
+  margin-top: 6px;
+  min-height: 1.3em;
+}
+.cfg-mini-title {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  margin: 10px 0 6px;
+  text-transform: uppercase;
+}
+.active-strategies {
+  display: grid;
+  gap: 7px;
+}
+.strategy-card {
+  align-items: center;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 8px 9px;
+}
+.strategy-card strong {
+  display: block;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11.5px;
+}
+.strategy-card span {
+  color: var(--muted);
+  display: block;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.strategy-card button {
+  background: var(--panel);
+  border-radius: 999px;
+  color: var(--error);
+  line-height: 1;
+  padding: 3px 8px;
+}
+.strategy-copy {
+  background: rgba(139, 139, 133, 0.08);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  margin: 8px 0;
+  padding: 8px;
+}
+.strategy-copy p {
+  margin: 0 0 4px;
+}
+.strategy-copy p:last-child {
+  margin-bottom: 0;
+}
+.help-dot {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--accent);
+  display: inline-grid;
+  font-size: 10px;
+  height: 17px;
+  margin-left: 4px;
+  place-items: center;
+  width: 17px;
+}
+.tool-group {
+  border-top: 1px dotted var(--border);
+  margin-top: 10px;
+  padding-top: 9px;
+}
+.tool-group-head {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 5px;
+}
+.tool-group-head span {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.tool-toggle {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  padding: 5px;
+}
+.tool-toggle .safety {
+  border: 1px solid rgba(79, 133, 105, 0.35);
+  border-radius: 999px;
+  color: var(--tool-res);
+  font-size: 9.5px;
+  margin-left: 5px;
+  padding: 1px 5px;
+}
+.tool-toggle .safety.warn {
+  border-color: rgba(194, 138, 44, 0.4);
+  color: var(--warn);
+}
+.tool-toggle .detail {
+  color: var(--muted);
+  display: block;
+  font-size: 11px;
+}
+.strategy-tool-picker {
+  grid-column: 1 / -1;
+}
 .cfg-note {
   color: var(--muted);
   font-size: 11.5px;

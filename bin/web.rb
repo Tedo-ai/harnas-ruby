@@ -193,6 +193,7 @@ SHARED_STATE = { # rubocop:disable Style/MutableConstant -- live web monitor sta
   registry: nil,
   stale_read_guard: true,
   system_prompt: nil,
+  model_overrides: {},
   installed_strategy_names: [],
   installed_strategy_configs: [],
   installed_strategy_handlers: [],
@@ -308,22 +309,23 @@ class FakeStreamProvider # rubocop:disable Style/OneClassPerFile -- script-local
 end
 
 def mock_triplet
+  model = SHARED_STATE.fetch(:model_overrides).fetch(:mock, "mock-model")
   {
     projection: Harnas::Projections::Anthropic.new(
-      model: "mock-model", registry: shared_registry, system: active_system_prompt
+      model: model, registry: shared_registry, system: active_system_prompt
     ),
     stream_provider: FakeStreamProvider.new,
     provider: Harnas::Benchmark::CannedProvider.new(response_text: "mock summary"),
     ingestor: Harnas::Ingestors::Anthropic.new,
     label: "mock (streaming)",
-    model: "mock-model"
+    model: model
   }
 end
 
 def anthropic_triplet(stream:)
   api_key = ENV.fetch("ANTHROPIC_API_KEY")
   config  = Harnas::Config.for_provider(:anthropic)
-  model   = config.fetch(:model)
+  model   = SHARED_STATE.fetch(:model_overrides).fetch(:anthropic, config.fetch(:model))
   {
     projection: Harnas::Projections::Anthropic.new(
       model: model, registry: shared_registry, system: active_system_prompt
@@ -345,7 +347,7 @@ end
 def openai_triplet(stream:)
   api_key = ENV.fetch("OPENAI_API_KEY")
   config  = Harnas::Config.for_provider(:openai)
-  model   = config.fetch(:model)
+  model   = SHARED_STATE.fetch(:model_overrides).fetch(:openai, config.fetch(:model))
   {
     projection: Harnas::Projections::OpenAI.new(
       model: model, registry: shared_registry, system: active_system_prompt
@@ -361,7 +363,7 @@ end
 def gemini_triplet(stream:)
   api_key = ENV.fetch("GEMINI_API_KEY")
   config  = Harnas::Config.for_provider(:gemini)
-  model   = config.fetch(:model)
+  model   = SHARED_STATE.fetch(:model_overrides).fetch(:gemini, config.fetch(:model))
   {
     projection: Harnas::Projections::Gemini.new(
       model: model, registry: shared_registry, system: active_system_prompt
@@ -493,6 +495,10 @@ end
 
 def install_strategy!(name, config, record: true)
   symbolized = config.transform_keys(&:to_sym)
+  if name == "Permission::HumanApproval"
+    return install_human_approval_strategy_from_config(symbolized, record: record)
+  end
+
   handler = install_strategy_handler(name, symbolized)
 
   label = "#{name}(#{symbolized.map { |k, v| "#{k}=#{v.inspect}" }.join(", ")})"
@@ -500,6 +506,24 @@ def install_strategy!(name, config, record: true)
   SHARED_STATE[:installed_strategy_handlers] << { point: :pre_projection, handler: handler }
   SHARED_STATE[:installed_strategy_configs] << { name: name, config: config } if record
   label
+end
+
+def install_human_approval_strategy_from_config(config, record:)
+  if config.key?(:tools)
+    SHARED_STATE[:permission_tools] =
+      Array(config[:tools]).map(&:to_s) & ALL_BUILTIN_TOOL_NAMES
+  end
+  uninstall_strategy_indexes_for("Permission::HumanApproval").each do |index|
+    uninstall_strategy!(index)
+  end
+  install_permission_strategy!(record: record)
+end
+
+def uninstall_strategy_indexes_for(prefix)
+  names = SHARED_STATE[:installed_strategy_names]
+  names.each_index
+       .select { |i| names[i].start_with?(prefix) }
+       .reverse
 end
 
 def install_strategy_handler(name, config)
@@ -583,14 +607,15 @@ def install_permission_strategy!(record: true)
     prompt: method(:permission_prompt_for),
     denial_reason: "denied by web approval"
   )
-  SHARED_STATE[:installed_strategy_names] <<
-    "Permission::HumanApproval(#{SHARED_STATE[:permission_tools].join(", ")})"
+  label = "Permission::HumanApproval(#{SHARED_STATE[:permission_tools].join(", ")})"
+  SHARED_STATE[:installed_strategy_names] << label
   SHARED_STATE[:installed_strategy_handlers] << { point: :pre_tool_use, handler: handler }
-  return unless record
+  return label unless record
 
   SHARED_STATE[:installed_strategy_configs] << {
-    name: "Permission::HumanApproval", config: {}
+    name: "Permission::HumanApproval", config: { tools: SHARED_STATE[:permission_tools] }
   }
+  label
 end
 
 def toggle_tool!(name, enabled, stream:)
@@ -716,6 +741,8 @@ def serve_web_asset(path)
 
   type = if path.end_with?(".css")
            "text/css; charset=utf-8"
+         elsif path.end_with?(".json")
+           "application/json; charset=utf-8"
          else
            "text/javascript; charset=utf-8"
          end
@@ -793,6 +820,23 @@ APP = lambda do |env|
         SHARED_STATE[:system_prompt] = data["text"].to_s
         rebuild_triplets!(stream: options[:stream])
         broadcast_config_changed
+      when "set_model"
+        provider = data["provider"].to_s.to_sym
+        model = data["model"].to_s.strip
+        if TRIPLETS.key?(provider) && !model.empty?
+          SHARED_STATE[:model_overrides][provider] = model
+          rebuild_triplets!(stream: options[:stream])
+          t = TRIPLETS.fetch(current_provider)
+          BRIDGE.broadcast(
+            kind: "provider_changed",
+            provider: current_provider,
+            label: t[:label],
+            model: t[:model],
+            config: current_config_introspection
+          )
+        else
+          BRIDGE.broadcast(kind: "error", message: "model override requires an available provider")
+        end
       when "toggle_tool"
         name = data["name"].to_s
         toggle_tool!(name, data["enabled"] != false, stream: options[:stream])
@@ -844,6 +888,9 @@ APP = lambda do |env|
     when %r{\A/(styles\.css|js/[A-Za-z0-9_-]+\.js)\z}
       name = Regexp.last_match(1)
       path = File.expand_path(File.join(WEB_DIR, name))
+      serve_web_asset(path)
+    when "/presets.json"
+      path = File.expand_path(File.join(WEB_DIR, "presets.json"))
       serve_web_asset(path)
     when "/author"
       [200,

@@ -20,6 +20,9 @@ the specification as a whole.
   extracted static CSS/ES module assets, and added strategy uninstall,
   session-library quick load, keyboard shortcuts, save/load toasts, and
   long-message expanders.
+- Redesigned the web monitor configuration tab with presets,
+  context-aware strategy forms, grouped tool controls, prompt helpers,
+  active strategy cards, and provider/model controls.
 
 ## [0.8.0] — 2026-05-03
 
