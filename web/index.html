@@ -185,6 +185,23 @@
   .evt-row.is-annotation { background: #f7f5fa; }
   .evt-row.guard-marked { outline: 1px solid var(--warn); outline-offset: -2px; }
 
+  /* Transient streaming row: shown live in the timeline detail view
+     while a turn is in flight; removed when the consolidated
+     :assistant_message lands via the durable Log path. The dashed
+     border + muted background make it visually obvious that this row
+     is ephemeral, never persisted. */
+  .evt-row.is-transient {
+    border: 1px dashed var(--muted);
+    margin: 4px 10px; border-radius: 4px;
+    background: #fbfbfa;
+    opacity: 0.92;
+  }
+  .evt-row.is-transient .evt-bar { background: var(--muted); opacity: 0.55; }
+  .evt-row.is-transient .evt-seq { color: var(--muted); }
+  .evt-row.is-transient .evt-type .tag.tag-transient {
+    border-color: var(--muted); color: var(--muted);
+  }
+
   /* Runtime + Config panels are simple scrollable blocks. Override
      the panel's flex layout so overflow-y:auto works as expected. */
   #panel-runtime.active,
@@ -476,7 +493,12 @@
     dirtyStrip:  false,
     dirtyStats:  false,
     config: null,
-    pendingPermissionId: null
+    pendingPermissionId: null,
+    // Transient row references for the timeline detail view, populated
+    // while a turn is streaming. Cleared on assistant_turn_completed
+    // (the consolidated :assistant_message arrives via the durable Log
+    // path and the normal renderer adds its row).
+    transientRows: []
   };
 
   const $ = (id) => document.getElementById(id);
@@ -879,9 +901,68 @@
   }
 
   function renderTransientStreamEvent(evt) {
-    const original = state.log;
-    state.log = original;
     appendTransientEvent(evt);
+  }
+
+  // Append a dashed row to the timeline detail list while a turn is
+  // streaming. These rows are *not* in state.log and are *not* persisted
+  // to the saved Session JSONL — they're pure UI feedback so the user
+  // can see chunks arriving in real time. Cleared on
+  // :assistant_turn_completed (via clearTransientTimelineRows) or when
+  // the consolidated :assistant_message lands via the durable Log path.
+  function appendTransientTimelineRow(evt) {
+    const list = document.getElementById("list-timeline");
+    if (!list) return;
+
+    const row = document.createElement("div");
+    row.className = "evt-row is-transient";
+
+    const bar = document.createElement("div");
+    bar.className = "evt-bar";
+    bar.style.background = COLORS[evt.type] || "#cccac2";
+
+    const seq = document.createElement("div");
+    seq.className = "evt-seq";
+    seq.textContent = "—";
+
+    const type = document.createElement("div");
+    type.className = "evt-type";
+    const tname = document.createElement("span");
+    tname.textContent = evt.type;
+    const tag = document.createElement("span");
+    tag.className = "tag tag-transient";
+    tag.textContent = "transient";
+    type.appendChild(tname);
+    type.appendChild(tag);
+
+    const body = document.createElement("div");
+    body.className = "evt-body";
+    if (evt.type === "assistant_text_delta") {
+      body.textContent = (evt.payload && evt.payload.chunk) || "";
+    } else if (evt.type === "tool_use_argument_delta") {
+      body.textContent = (evt.payload && evt.payload.chunk) || "";
+    } else if (evt.type === "assistant_turn_started") {
+      body.textContent = "turn " + ((evt.payload && evt.payload.turn_id) || "");
+    } else if (evt.type === "assistant_turn_completed") {
+      const u = (evt.payload && evt.payload.usage) || {};
+      body.textContent =
+        "stop=" + ((evt.payload && evt.payload.stop_reason) || "?") +
+        " · in=" + (u.input_tokens || 0) +
+        " out=" + (u.output_tokens || 0);
+    }
+
+    row.appendChild(bar);
+    row.appendChild(seq);
+    row.appendChild(type);
+    row.appendChild(body);
+
+    list.appendChild(row);
+    state.transientRows.push(row);
+  }
+
+  function clearTransientTimelineRows() {
+    state.transientRows.forEach(row => row.remove());
+    state.transientRows = [];
   }
 
   function appendTransientEvent(evt) {
@@ -894,6 +975,7 @@
       scheduleScroll();
       state.deltaCount += 1;
       $("meta-deltas").textContent = "δ " + state.deltaCount;
+      appendTransientTimelineRow(evt);
       return;
     }
     if (evt.type === "assistant_turn_started") {
@@ -901,12 +983,15 @@
       state.streamingMsgText = "";
       state.deltaCount = 0;
       $("meta-deltas").textContent = "δ 0";
+      clearTransientTimelineRows();
+      appendTransientTimelineRow(evt);
       return;
     }
     if (evt.type === "assistant_turn_completed") {
       flushStreamingBubble();
       state.streamingMsgEl = null;
       state.streamingMsgText = "";
+      appendTransientTimelineRow(evt);
       return;
     }
     if (evt.type === "assistant_turn_failed") {
@@ -915,6 +1000,7 @@
       scrollChat();
       state.streamingMsgEl = null;
       state.streamingMsgText = "";
+      clearTransientTimelineRows();
       return;
     }
     if (evt.type === "tool_use_begin") {
@@ -1013,6 +1099,14 @@
 
   function appendLogEvent(evt) {
     state.log.push(evt);
+
+    // The consolidated turn outputs (:assistant_message and :tool_use)
+    // arrive on the durable Log path. Once they land, the transient
+    // streaming rows in the timeline have served their purpose — clear
+    // them so the consolidated row stands alone.
+    if (evt.type === "assistant_message" || evt.type === "tool_use") {
+      clearTransientTimelineRows();
+    }
 
     // ── text streaming ───────────────────────────────────────────
     if (evt.type === "assistant_text_delta") {
@@ -1406,6 +1500,13 @@
     const list = document.getElementById("list-" + which);
     list.innerHTML = "";
     blocks.forEach(b => list.appendChild(makeEventRow(b)));
+    // Re-attach any in-flight transient streaming rows so they survive
+    // a strip redraw that re-renders the durable list. They were
+    // detached from the DOM by innerHTML = "" but the JS references
+    // are still live; appending re-attaches the same nodes.
+    if (which === "timeline" && state.transientRows.length) {
+      state.transientRows.forEach(row => list.appendChild(row));
+    }
   }
 
   function makeEventRow(block, ctx) {
