@@ -128,6 +128,14 @@ module Harnas
           previous = last_hash_for(path)
 
           if previous.nil?
+            # No annotation for this path. If the file doesn't exist on
+            # disk, this is a creation — there's no prior content for a
+            # write to clobber, so no stale-read concern is possible.
+            # Let it through. Only treat it as a never_read violation
+            # when the file actually exists (we'd be overwriting content
+            # we've never seen).
+            return unless File.exist?(path)
+
             handle_never_read(path, action: action) if @require_read
             return
           end

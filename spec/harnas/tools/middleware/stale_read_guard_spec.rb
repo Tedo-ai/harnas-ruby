@@ -68,6 +68,25 @@ RSpec.describe Harnas::Tools::Middleware::StaleReadGuard do
       end
     end
 
+    it "allows write_file when the file does not exist on disk (creation, no stale-read concern)" do
+      Dir.mktmpdir do |dir|
+        path = File.join(dir, "fresh.txt")
+        expect(File.exist?(path)).to be(false)
+        expect do
+          guard.wrap_write(write_handler).call(path: path, content: "hello\n")
+        end.not_to raise_error
+        expect(File.read(path)).to eq("hello\n")
+      end
+    end
+
+    it "still refuses write_file when the file exists on disk but was never read" do
+      with_file("existing\n") do |path|
+        expect do
+          guard.wrap_write(write_handler).call(path: path, content: "overwrite\n")
+        end.to raise_error(described_class::StaleReadError, /never read/)
+      end
+    end
+
     it "refreshes the known hash after a successful edit, enabling a second edit" do
       with_file("alpha\n") do |path|
         guard.wrap_read(read_handler).call(path: path)
