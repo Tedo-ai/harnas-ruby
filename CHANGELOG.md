@@ -9,6 +9,11 @@ the specification as a whole.
 
 ## [Unreleased]
 
+### Fixed
+
+- Clarified `StaleReadGuard` refusal messages so LLM consumers know when
+  to call `read_file` before retrying a write/edit.
+
 ## [0.8.0] — 2026-05-03
 
 ### Reference implementation (Ruby)

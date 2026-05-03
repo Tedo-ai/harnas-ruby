@@ -43,7 +43,7 @@ RSpec.describe Harnas::Tools::Middleware::StaleReadGuard do
           guard.wrap_edit(edit_handler).call(
             path: path, old_string: "content", new_string: "CONTENT"
           )
-        end.to raise_error(described_class::StaleReadError, /never read/)
+        end.to raise_error(described_class::StaleReadError, /has not been read/)
       end
     end
 
@@ -56,7 +56,7 @@ RSpec.describe Harnas::Tools::Middleware::StaleReadGuard do
           guard.wrap_edit(edit_handler).call(
             path: path, old_string: "changed externally", new_string: "!"
           )
-        end.to raise_error(described_class::StaleReadError, /drifted/)
+        end.to raise_error(described_class::StaleReadError, /has changed/)
       end
     end
 
@@ -83,7 +83,7 @@ RSpec.describe Harnas::Tools::Middleware::StaleReadGuard do
       with_file("existing\n") do |path|
         expect do
           guard.wrap_write(write_handler).call(path: path, content: "overwrite\n")
-        end.to raise_error(described_class::StaleReadError, /never read/)
+        end.to raise_error(described_class::StaleReadError, /has not been read/)
       end
     end
 
@@ -157,7 +157,7 @@ RSpec.describe Harnas::Tools::Middleware::StaleReadGuard do
           guard.wrap_edit(edit_handler).call(
             path: path, old_string: "b", new_string: "!"
           )
-        end.to raise_error(described_class::StaleReadError, /drifted/)
+        end.to raise_error(described_class::StaleReadError, /has changed/)
       end
     end
   end

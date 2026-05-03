@@ -165,9 +165,17 @@ module Harnas
         def stale_message(path, action, reason)
           case reason
           when :never_read
-            "StaleReadGuard: refuse to #{action} #{path} — never read; call read_file first"
+            [
+              "StaleReadGuard: refuse to #{action} #{path} — file exists on disk",
+              "but has not been read in this session. Call read_file(#{path}) first",
+              "to capture its current state, then retry the #{action}."
+            ].join(" ")
           else
-            "StaleReadGuard: refuse to #{action} #{path} — disk content drifted since the last read"
+            [
+              "StaleReadGuard: refuse to #{action} #{path} — disk content has",
+              "changed since the last read in this session. Call read_file(#{path})",
+              "again to refresh, then retry the #{action}."
+            ].join(" ")
           end
         end
 
