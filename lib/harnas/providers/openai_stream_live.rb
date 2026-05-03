@@ -52,7 +52,10 @@ module Harnas
         yield_event(block, :assistant_turn_started,
                     Events::AssistantTurnStarted.new(turn_id: turn_id).to_h)
 
-        stream_wire_events(request.merge(stream: true), state, &block)
+        stream_wire_events(
+          request.merge(stream: true, stream_options: { include_usage: true }),
+          state, &block
+        )
         yield_completion(state, &block)
       rescue StandardError => e
         yield_event(block, :assistant_turn_failed,
