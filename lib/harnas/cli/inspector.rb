@@ -72,6 +72,8 @@ module Harnas
           tool_result_summary(payload)
         when :provider_error
           "#{payload[:provider]} #{payload[:status] || "error"} #{payload[:message]}"
+        when :runtime_error
+          "#{payload[:source]} #{payload[:handler]} #{payload[:message]}"
         when :compact
           "replaces=#{payload[:replaces].inspect} #{truncate(payload[:summary])}"
         when :revert

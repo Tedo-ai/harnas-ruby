@@ -3,6 +3,7 @@
 require "harnas/hooks"
 require "harnas/actions/compact"
 require "harnas/compaction/helpers"
+require "harnas/strategies/observation"
 
 module Harnas
   module Strategies
@@ -24,6 +25,8 @@ module Harnas
       # See spec/strategies/compaction/token-marker-tail.md for the
       # Algorithm, failure modes, and block-strip visualization.
       class TokenMarkerTail
+        include Harnas::Strategies::Observation
+
         # Normative default per spec/strategies/compaction/token-marker-tail.md.
         # $N, $E, $T substituted with count, estimated tokens, trigger tokens.
         DEFAULT_SUMMARY_FORMAT =
@@ -61,6 +64,13 @@ module Harnas
         end
 
         def on_pre_projection(session:)
+          observe_strategy(session, name: "Compaction::TokenMarkerTail",
+                                    hook_point: :pre_projection) do
+            run_pre_projection(session)
+          end
+        end
+
+        def run_pre_projection(session)
           messages       = Harnas::Compaction::Helpers.message_events(session.log)
           estimated      = Harnas::Compaction::Helpers.estimate_tokens(messages)
           trigger_tokens = (@max_tokens * @threshold).to_i

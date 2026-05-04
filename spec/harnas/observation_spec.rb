@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "harnas/observation"
+require "harnas/event"
 
 RSpec.describe Harnas::Observation do
   before { described_class.reset! }
@@ -114,5 +115,26 @@ RSpec.describe Harnas::Observation::Collector do
     c.call(:a, x: 1)
     c.reset!
     expect(c.events).to eq([])
+  end
+end
+
+RSpec.describe Harnas::Observation::CostTracker do
+  it "accumulates assistant_message usage from event_appended emissions" do
+    bus = Harnas::Observation.new
+    tracker = described_class.new(observation: bus)
+    event = Harnas::Event.new(
+      seq: 0,
+      id: "evt_1",
+      type: :assistant_message,
+      payload: { text: "hi", stop_reason: :end_turn,
+                 usage: { input_tokens: 3, output_tokens: 2 } }
+    )
+
+    bus.emit(:event_appended, event: event, log_size: 1)
+
+    expect(tracker.input_tokens).to eq(3)
+    expect(tracker.output_tokens).to eq(2)
+    expect(tracker.total_tokens).to eq(5)
+    expect(tracker.turns).to eq(1)
   end
 end

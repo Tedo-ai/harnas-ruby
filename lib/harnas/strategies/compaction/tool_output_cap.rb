@@ -4,6 +4,7 @@ require "harnas/hooks"
 require "harnas/actions/compact"
 require "harnas/compaction/helpers"
 require "harnas/mutations"
+require "harnas/strategies/observation"
 
 module Harnas
   module Strategies
@@ -37,6 +38,8 @@ module Harnas
       #
       # See spec/strategies/compaction/tool-output-cap.md.
       class ToolOutputCap
+        include Harnas::Strategies::Observation
+
         DEFAULT_MAX_BYTES    = 4096
         DEFAULT_PREFIX_BYTES = 1024
         DEFAULT_SUMMARY_FORMAT =
@@ -73,6 +76,13 @@ module Harnas
         end
 
         def on_pre_projection(session:)
+          observe_strategy(session, name: "Compaction::ToolOutputCap",
+                                    hook_point: :pre_projection) do
+            run_pre_projection(session)
+          end
+        end
+
+        def run_pre_projection(session)
           effective = Mutations.apply(session.log)
           tool_result_index = index_tool_uses(session.log)
 

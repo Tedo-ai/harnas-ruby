@@ -3,6 +3,7 @@
 require "harnas/hooks"
 require "harnas/actions/allow"
 require "harnas/actions/refuse"
+require "harnas/strategies/observation"
 
 module Harnas
   module Strategies
@@ -24,6 +25,8 @@ module Harnas
       # caller passes as `prompt:`. That's on purpose: the human is
       # the strategy.
       class HumanApproval
+        include Harnas::Strategies::Observation
+
         # Normative default per spec/strategies/permission/human-approval.md.
         DEFAULT_DENIAL_REASON = "human declined"
 
@@ -47,7 +50,16 @@ module Harnas
           handler
         end
 
-        def on_pre_tool_use(tool_use:, **_)
+        def on_pre_tool_use(tool_use:, session: nil, **_)
+          return approval_decision(tool_use) unless session
+
+          observe_strategy(session, name: "Permission::HumanApproval",
+                                    hook_point: :pre_tool_use) do
+            approval_decision(tool_use)
+          end
+        end
+
+        def approval_decision(tool_use)
           if @prompt.call(tool_use)
             Harnas::Actions::Allow.call
           else

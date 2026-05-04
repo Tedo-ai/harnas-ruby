@@ -58,7 +58,9 @@ module Harnas
     #                    Explicit values override ENV fallbacks. Non-mock
     #                    providers require either api_keys[kind] or the
     #                    matching provider env var.
-    def self.load(source, tool_handlers: {}, strategy_handlers: {}, api_keys: {})
+    # rubocop:disable Metrics/MethodLength
+    def self.load(source, tool_handlers: {}, strategy_handlers: {}, hook_handlers: {},
+                  api_keys: {})
       manifest = parse_source(source)
       validate!(manifest)
       check_version!(manifest["harnas_version"])
@@ -75,6 +77,7 @@ module Harnas
         strategy_handlers: strategy_handlers,
         provider_bundle: provider_bundle
       )
+      hooks = build_hooks(manifest.fetch("hooks", []), hook_handlers: hook_handlers)
 
       Loaded.new(
         name: manifest["name"],
@@ -84,17 +87,19 @@ module Harnas
         stream_provider: provider_bundle[:stream_provider],
         ingestor: provider_bundle[:ingestor],
         registry: registry,
-        strategies: strategies
+        strategies: strategies,
+        hooks: hooks
       )
     end
+    # rubocop:enable Metrics/MethodLength
 
     # A prepared agent. Side-effect-free until #install_strategies! is called.
     class Loaded
       attr_reader :name, :session, :projection, :provider, :stream_provider, :ingestor,
-                  :registry, :strategies
+                  :registry, :strategies, :hooks
 
       def initialize(name:, session:, projection:, provider:, ingestor:, # rubocop:disable Metrics/ParameterLists
-                     registry:, strategies:, stream_provider: nil)
+                     registry:, strategies:, hooks: [], stream_provider: nil)
         @name            = name
         @session         = session
         @projection      = projection
@@ -103,13 +108,15 @@ module Harnas
         @ingestor        = ingestor
         @registry        = registry
         @strategies      = strategies
+        @hooks           = hooks
       end
 
       # Install every manifest-declared strategy onto this Loaded Session.
       # Returns the array of handler objects in install order (so they
       # can be removed individually via session.hooks.off).
       def install_strategies!
-        @strategies.map { |strategy| strategy.install(@session) }
+        @strategies.map { |strategy| strategy.install(@session) } +
+          @hooks.map { |hook| hook.install(@session) }
       end
 
       # Convenience: build a runner + AgentLoop with the bundle's parts.
@@ -127,7 +134,8 @@ module Harnas
           stream_provider: @stream_provider,
           ingestor: @ingestor,
           registry: @registry,
-          strategies: @strategies
+          strategies: @strategies,
+          hooks: @hooks
         )
       end
     end
@@ -135,15 +143,68 @@ module Harnas
     # A strategy declaration ready to install. #install delegates to the
     # canonical class's install method with the resolved config.
     class StrategyInstallation
-      attr_reader :klass, :config
+      attr_reader :klass, :config, :on_error, :name
 
-      def initialize(klass:, config:)
+      def initialize(klass:, config:, on_error: :isolate, name: nil)
         @klass  = klass
         @config = config
+        @on_error = on_error.to_sym
+        @name = name || klass.name
       end
 
       def install(session)
-        session.install(@klass, **@config)
+        before = snapshot_handlers(session)
+        handler = session.install(@klass, **@config)
+        point = installed_point(session, before, handler)
+        session.hooks.off(point, handler)
+        session.hooks.on(point, handler, on_error: @on_error, name: @name, source: :strategy)
+      end
+
+      private
+
+      def snapshot_handlers(session)
+        session.hooks.handlers.transform_values(&:dup)
+      end
+
+      def installed_point(session, before, handler)
+        session.hooks.handlers.each_pair do |point, handlers|
+          return point if handlers.include?(handler) && !Array(before[point]).include?(handler)
+        end
+        klass.name.include?("Permission") ? :pre_tool_use : :pre_projection
+      end
+    end
+
+    class HookInstallation
+      attr_reader :point, :handler, :config, :on_error, :name
+
+      def initialize(point:, handler:, config:, on_error:, name:)
+        @point = point.to_sym
+        @handler = handler
+        @config = config
+        @on_error = on_error.to_sym
+        @name = name
+      end
+
+      def install(session)
+        callable = build_callable(session)
+        session.hooks.on(@point, callable, on_error: @on_error, name: @name, source: :hook)
+      end
+
+      private
+
+      def build_callable(session)
+        if @handler.respond_to?(:install)
+          installed = @handler.install(session, **@config)
+          return installed if installed.respond_to?(:call)
+        end
+
+        lambda do |**ctx|
+          unless @handler.respond_to?(:call)
+            raise UnresolvedHandlerError, "hook handler #{@name.inspect} is not callable"
+          end
+
+          @handler.call(**ctx, config: @config)
+        end
       end
     end
 
@@ -399,12 +460,34 @@ module Harnas
         config = resolve_config(name, strategy.fetch("config", {}),
                                 strategy_handlers, provider_bundle)
 
-        StrategyInstallation.new(klass: klass, config: config)
+        StrategyInstallation.new(
+          klass: klass,
+          config: config,
+          on_error: strategy.fetch("on_error", "isolate"),
+          name: name
+        )
+      end
+    end
+
+    def self.build_hooks(hooks_spec, hook_handlers:)
+      hooks_spec.map do |hook|
+        handler_name = hook.fetch("handler")
+        handler = hook_handlers[handler_name] ||
+                  (raise UnresolvedHandlerError,
+                         "hook handler #{handler_name.inspect} not in hook_handlers")
+
+        HookInstallation.new(
+          point: hook.fetch("point").delete_prefix(":"),
+          handler: handler,
+          config: symbolize_config(hook.fetch("config", {})),
+          on_error: hook.fetch("on_error", "isolate"),
+          name: handler_name
+        )
       end
     end
 
     def self.resolve_config(strategy_name, raw_config, strategy_handlers, provider_bundle)
-      config = raw_config.each_with_object({}) { |(k, v), h| h[k.to_sym] = v }
+      config = symbolize_config(raw_config)
 
       Array(CALLABLE_CONFIG_FIELDS[strategy_name]).each do |field|
         handler_name = config[field] or next
@@ -418,6 +501,10 @@ module Harnas
       end
 
       config
+    end
+
+    def self.symbolize_config(raw_config)
+      raw_config.each_with_object({}) { |(k, v), h| h[k.to_sym] = v }
     end
 
     def self.raise_unresolved_strategy_handler(strategy_name, field, handler_name)

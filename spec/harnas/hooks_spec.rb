@@ -80,6 +80,28 @@ RSpec.describe Harnas::Hooks do
         expect(e[:error]).to be_a(StandardError)
       end
     end
+
+    it "appends :runtime_error and raises TurnFailed for fail_turn handlers" do
+      session = Harnas::Session.create
+      described_class.on(
+        :test,
+        ->(**_) { raise "kaput" },
+        on_error: :fail_turn,
+        name: "ExplodingHook"
+      )
+
+      expect { described_class.invoke(:test, session: session) }
+        .to raise_error(Harnas::Hooks::TurnFailed)
+      err = session.log.to_a.last
+      expect(err.type).to eq(:runtime_error)
+      expect(err.payload).to include(
+        source: "hook",
+        handler: "ExplodingHook",
+        error_class: "RuntimeError",
+        message: "kaput",
+        terminal: true
+      )
+    end
   end
 
   describe ".scoped" do

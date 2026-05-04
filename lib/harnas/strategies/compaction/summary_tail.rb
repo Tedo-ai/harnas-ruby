@@ -5,6 +5,7 @@ require "harnas/hooks"
 require "harnas/actions/compact"
 require "harnas/compaction/helpers"
 require "harnas/events/user_message"
+require "harnas/strategies/observation"
 
 module Harnas
   module Strategies
@@ -28,6 +29,8 @@ module Harnas
       # See spec/strategies/compaction/summary-tail.md for the Algorithm,
       # failure modes, and block-strip visualization.
       class SummaryTail
+        include Harnas::Strategies::Observation
+
         DEFAULT_PROMPT = <<~PROMPT.strip
           Summarize the preceding conversation tersely, preserving facts
           the agent will need to continue the work. Prefer specifics
@@ -70,6 +73,13 @@ module Harnas
         end
 
         def on_pre_projection(session:)
+          observe_strategy(session, name: "Compaction::SummaryTail",
+                                    hook_point: :pre_projection) do
+            run_pre_projection(session)
+          end
+        end
+
+        def run_pre_projection(session)
           messages = Harnas::Compaction::Helpers.message_events(session.log)
           return if messages.size <= @max_messages
 

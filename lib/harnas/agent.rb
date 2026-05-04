@@ -29,15 +29,16 @@ module Harnas
     attr_reader :name
 
     def self.from_manifest(source, api_keys: {}, tool_handlers: {},
-                           strategy_handlers: {}, max_turns: AgentLoop::DEFAULT_MAX_TURNS,
-                           system: nil)
+                           strategy_handlers: {}, hook_handlers: {},
+                           max_turns: AgentLoop::DEFAULT_MAX_TURNS, system: nil)
       source = override_system(source, system) unless system.nil?
 
       loaded = Manifest.load(
         source,
         api_keys: api_keys,
         tool_handlers: tool_handlers,
-        strategy_handlers: strategy_handlers
+        strategy_handlers: strategy_handlers,
+        hook_handlers: hook_handlers
       )
       new(loaded: loaded, max_turns: max_turns)
     end

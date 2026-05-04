@@ -10,6 +10,8 @@ module Harnas
   # calling code path (R4); they're warned to STDERR when $VERBOSE is
   # set and reported through Observation as :hook_handler_failed.
   class Hooks
+    class TurnFailed < StandardError; end
+
     attr_reader :handlers
 
     def self.fresh_registry
@@ -49,20 +51,27 @@ module Harnas
 
     def initialize
       @handlers = self.class.fresh_registry
+      @handler_metadata = {}
     end
 
     # Register a handler for a hook point. Handler is any callable
     # that accepts the keyword payload for that point.
-    def on(point, handler = nil, &block)
+    def on(point, handler = nil, on_error: :isolate, name: nil, source: :hook, &block)
       h = handler || block
       raise ArgumentError, "hook handler or block required" if h.nil?
 
       @handlers[point] << h
+      @handler_metadata[h] = {
+        on_error: on_error.to_sym,
+        name: name || h.class.name || "anonymous",
+        source: source
+      }
       h
     end
 
     def off(point, handler)
       @handlers[point].delete(handler)
+      @handler_metadata.delete(handler)
     end
 
     def reset!
@@ -88,25 +97,45 @@ module Harnas
     # tests and ad-hoc "try this handler just for this run" usage.
     def scoped
       saved = self.class.fresh_registry
+      saved_metadata = @handler_metadata.dup
       @handlers.each_pair { |k, v| saved[k] = v.dup }
       yield
     ensure
       @handlers = saved
+      @handler_metadata = saved_metadata
     end
 
     private
 
     def handle_failure(point, handler, error, ctx)
       warn "Hook handler raised for #{point}: #{error.class}: #{error.message}" if $VERBOSE
-      return unless defined?(Harnas::Observation)
+      metadata = @handler_metadata.fetch(handler, {})
+      if defined?(Harnas::Observation)
+        bus = ctx[:session].respond_to?(:observation) ? ctx[:session].observation : Harnas::Observation
+        bus.emit(
+          :hook_handler_failed,
+          point: point,
+          handler: metadata[:name] || handler.class.name || "anonymous",
+          error: error
+        )
+      end
+      fail_turn!(ctx.fetch(:session), metadata, error) if metadata[:on_error] == :fail_turn
+    end
 
-      bus = ctx[:session].respond_to?(:observation) ? ctx[:session].observation : Harnas::Observation
-      bus.emit(
-        :hook_handler_failed,
-        point: point,
-        handler: handler.class.name || "anonymous",
-        error: error
+    def fail_turn!(session, metadata, error)
+      require "harnas/events/runtime_error"
+
+      session.log.append(
+        type: :runtime_error,
+        payload: Harnas::Events::RuntimeError.new(
+          source: metadata[:source] || :hook,
+          handler: metadata[:name] || "anonymous",
+          error_class: error.class.name.to_s,
+          message: error.message.to_s,
+          terminal: true
+        ).to_h
       )
+      raise TurnFailed, "#{metadata[:name] || "hook"} failed: #{error.class}: #{error.message}"
     end
   end
 end

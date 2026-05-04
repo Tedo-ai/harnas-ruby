@@ -232,6 +232,34 @@ RSpec.describe Harnas::Manifest do
     end
   end
 
+  describe "hook resolution" do
+    it "resolves manifest hooks via hook_handlers and installs them" do
+      calls = []
+      manifest = basic_manifest.merge(
+        "hooks" => [
+          { "point" => ":post_tool_use", "handler" => "acme.audit",
+            "config" => { "endpoint" => "memory" } }
+        ]
+      )
+      handler = ->(**ctx) { calls << ctx[:config].fetch(:endpoint) }
+
+      loaded = described_class.load(manifest, hook_handlers: { "acme.audit" => handler })
+      loaded.install_strategies!
+      loaded.session.hooks.invoke(:post_tool_use, session: loaded.session)
+
+      expect(calls).to eq(["memory"])
+    end
+
+    it "raises when a manifest hook handler is unresolved" do
+      manifest = basic_manifest.merge(
+        "hooks" => [{ "point" => ":post_tool_use", "handler" => "acme.missing" }]
+      )
+
+      expect { described_class.load(manifest, hook_handlers: {}) }
+        .to raise_error(Harnas::Manifest::UnresolvedHandlerError, /acme.missing/)
+    end
+  end
+
   describe "install step" do
     it "is side-effect-free on load; install_strategies! performs registration" do
       manifest = basic_manifest.merge(

@@ -43,6 +43,7 @@ module Harnas
     # Any spec-conformant Harnas implementation in any language,
     # fed the same manifest + script + inputs, MUST produce the same
     # serialized Log.
+    # rubocop:disable Metrics/ModuleLength
     module Runner
       Result = Data.define(:fixture, :passed, :diff, :actual, :expected) do
         def summary
@@ -52,21 +53,30 @@ module Harnas
         end
       end
 
+      # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
       def self.run(dir)
         manifest = JSON.parse(File.read(File.join(dir, "manifest.json")))
         script, streaming = load_provider_script(dir)
         inputs   = JSON.parse(File.read(File.join(dir, "inputs.json")))
         expected = load_expected(File.join(dir, "expected-log.jsonl"))
         expected_deltas_path = File.join(dir, "expected-deltas.jsonl")
+        expected_strategy_events_path = File.join(dir, "expected-strategy-events.jsonl")
 
-        actual, actual_deltas = run_agent_with_optional_deltas(
+        actual, actual_deltas, actual_strategy_events = run_agent_with_sidecars(
           manifest, script, inputs, streaming: streaming,
-                                    expected_deltas_path: expected_deltas_path
+                                    expected_deltas_path: expected_deltas_path,
+                                    expected_strategy_events_path: expected_strategy_events_path
         )
 
         diff = first_mismatch(actual, expected)
         if diff.nil? && File.exist?(expected_deltas_path)
           diff = first_mismatch(actual_deltas, load_expected(expected_deltas_path))
+        end
+        if diff.nil? && File.exist?(expected_strategy_events_path)
+          diff = first_mismatch(
+            actual_strategy_events,
+            load_expected(expected_strategy_events_path)
+          )
         end
         Result.new(
           fixture: File.basename(dir),
@@ -76,26 +86,43 @@ module Harnas
           expected: expected
         )
       end
+      # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
 
       def self.run_agent(manifest, script, inputs, streaming: false)
         serialize_log(run_session(manifest, script, inputs, streaming: streaming).log)
       end
 
-      def self.run_agent_with_optional_deltas(manifest, script, inputs, streaming: false,
-                                              expected_deltas_path: nil)
-        return [run_agent(manifest, script, inputs, streaming: streaming), []] \
-          unless expected_deltas_path && File.exist?(expected_deltas_path)
+      def self.run_agent_with_sidecars(manifest, script, inputs, streaming: false,
+                                       expected_deltas_path: nil,
+                                       expected_strategy_events_path: nil)
+        needs_deltas = expected_deltas_path && File.exist?(expected_deltas_path)
+        needs_strategy_events = expected_strategy_events_path &&
+                                File.exist?(expected_strategy_events_path)
+        return [run_agent(manifest, script, inputs, streaming: streaming), [], []] \
+          unless needs_deltas || needs_strategy_events
 
-        Dir.mktmpdir("harnas-deltas") do |dir|
+        Dir.mktmpdir("harnas-sidecars") do |dir|
           delta_path = File.join(dir, "session.deltas.jsonl")
-          session = run_session(manifest, script, inputs, streaming: streaming,
-                                                          delta_path: delta_path)
-          [serialize_log(session.log), load_expected(delta_path)]
+          strategy_events_path = File.join(dir, "session.strategy-events.jsonl")
+          session = run_session(
+            manifest,
+            script,
+            inputs,
+            streaming: streaming,
+            delta_path: (delta_path if needs_deltas),
+            strategy_events_path: (strategy_events_path if needs_strategy_events)
+          )
+          [
+            serialize_log(session.log),
+            needs_deltas ? load_expected(delta_path) : [],
+            needs_strategy_events ? load_expected(strategy_events_path) : []
+          ]
         end
       end
 
+      # rubocop:disable Metrics/MethodLength
       def self.run_session(manifest, script, inputs, streaming: false, session: nil,
-                           delta_path: nil)
+                           delta_path: nil, strategy_events_path: nil)
         scripted = if streaming
                      ScriptedStreamProvider.new(streams: script)
                    else
@@ -105,12 +132,19 @@ module Harnas
           manifest,
           api_keys: conformance_api_keys,
           tool_handlers: conformance_tool_handlers,
-          strategy_handlers: conformance_strategy_handlers
+          strategy_handlers: conformance_strategy_handlers,
+          hook_handlers: conformance_hook_handlers
         )
         loaded = loaded.with_session(session) if session
         if delta_path
           Harnas::Observation::DeltaLogger.new(
             path: delta_path,
+            observation: loaded.session.observation
+          )
+        end
+        if strategy_events_path
+          StrategyEventCollector.new(
+            path: strategy_events_path,
             observation: loaded.session.observation
           )
         end
@@ -122,6 +156,7 @@ module Harnas
 
         loaded.session
       end
+      # rubocop:enable Metrics/MethodLength
 
       def self.load_provider_script(dir)
         stream_path = File.join(dir, "provider-script-stream.json")
@@ -257,6 +292,31 @@ module Harnas
         Hash.new { |_, _| ->(_tool_use) { true } }
       end
 
+      def self.conformance_hook_handlers
+        Hash.new do |_, name|
+          case name
+          when "conformance.audit_post_tool_use"
+            lambda do |session:, tool_use:, tool_result:, **_|
+              session.log.append(
+                type: :annotation,
+                payload: {
+                  kind: "conformance.hook",
+                  data: {
+                    tool_use_id: tool_use.payload[:id],
+                    result_seq: tool_result.seq
+                  }
+                }
+              )
+            end
+          when "conformance.raise_hook"
+            ->(**_) { raise "conformance hook failure" }
+          else
+            raise Harnas::Manifest::UnresolvedHandlerError,
+                  "hook handler #{name.inspect} not in hook_handlers"
+          end
+        end
+      end
+
       def self.load_expected(path)
         File.read(path).each_line.reject(&:empty?).map { |line| normalize(JSON.parse(line)) }
       end
@@ -293,6 +353,28 @@ module Harnas
         end
         nil
       end
+
+      class StrategyEventCollector
+        def initialize(path:, observation:)
+          @path = path
+          @index = 0
+          observation.subscribe(method(:call))
+        end
+
+        def call(event_name, payload)
+          return unless %i[strategy_started strategy_completed].include?(event_name)
+
+          File.open(@path, "a") do |io|
+            io.puts JSON.generate(
+              index: @index,
+              event: event_name.to_s,
+              payload: Runner.normalize(payload)
+            )
+          end
+          @index += 1
+        end
+      end
     end
+    # rubocop:enable Metrics/ModuleLength
   end
 end

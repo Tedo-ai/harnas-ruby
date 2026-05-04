@@ -9,6 +9,19 @@ the specification as a whole.
 
 ## [Unreleased]
 
+### Added
+
+- Added manifest-declared hook installation, `on_error: "fail_turn"`
+  hook policy support, and terminal `:runtime_error` Log events for
+  harness-internal failures.
+- Added `Harnas::Observation::CostTracker` for cumulative token usage
+  tracking.
+- Strategies now emit Observation-only `:strategy_started` and
+  `:strategy_completed` events with `noop`, `mutated`, `refused`, or
+  `error` effects.
+- Conformance now passes 27/27 fixtures, including manifest hooks,
+  fail-turn runtime errors, and strategy-event sidecars.
+
 ### Fixed
 
 - Clarified `StaleReadGuard` refusal messages so LLM consumers know when

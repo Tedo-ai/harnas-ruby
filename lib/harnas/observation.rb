@@ -162,5 +162,48 @@ module Harnas
         @index += 1
       end
     end
+
+    # Informative utility for cumulative token accounting. It derives
+    # totals from appended assistant_message Events; budgets remain a
+    # product concern layered above Harnas.
+    class CostTracker
+      attr_reader :input_tokens, :output_tokens, :turns, :subscriber
+
+      def initialize(observation:, threshold: nil, on_threshold: nil)
+        @input_tokens = 0
+        @output_tokens = 0
+        @turns = 0
+        @threshold = threshold
+        @on_threshold = on_threshold
+        @threshold_fired = false
+        @subscriber = observation.subscribe(method(:call))
+      end
+
+      def total_tokens
+        @input_tokens + @output_tokens
+      end
+
+      def call(event_name, payload)
+        return unless event_name == :event_appended
+
+        event = payload[:event]
+        return unless event&.type == :assistant_message
+
+        usage = event.payload.fetch(:usage, {})
+        @input_tokens += usage.fetch(:input_tokens, 0).to_i
+        @output_tokens += usage.fetch(:output_tokens, 0).to_i
+        @turns += 1
+        maybe_fire_threshold
+      end
+
+      private
+
+      def maybe_fire_threshold
+        return if @threshold.nil? || @threshold_fired || total_tokens < @threshold
+
+        @threshold_fired = true
+        @on_threshold&.call(self)
+      end
+    end
   end
 end

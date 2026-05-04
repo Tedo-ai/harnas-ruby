@@ -24,6 +24,7 @@
     summary:                 "#8b8b85",
     annotation:              "#7b6f90",
     provider_error:          "#b04a3a",
+    runtime_error:           "#b04a3a",
     fork:                    "#7b6f90",
     assistant_turn_started:  "#cccac2",
     assistant_turn_completed:"#cccac2",
@@ -980,7 +981,7 @@
       state.streamingMsgText = "";
       return;
     }
-    if (evt.type === "provider_error") {
+    if (evt.type === "provider_error" || evt.type === "runtime_error") {
       if (state.streamingMsgEl) {
         const body = state.streamingMsgEl.querySelector(".body");
         body.appendChild(document.createTextNode("\n[stream interrupted]"));
@@ -989,7 +990,7 @@
         state.streamingMsgText = "";
       }
       const cls = evt.payload && evt.payload.terminal ? "fatal" : "retry";
-      const node = makeMessageNode("provider_error " + cls, summarizeMessagePayload(evt));
+      const node = makeMessageNode(evt.type + " " + cls, summarizeMessagePayload(evt));
       chat.appendChild(node);
       scrollChat();
       return;
@@ -1185,6 +1186,9 @@
     if (evt.type === "provider_error") {
       return `${p.terminal ? "fatal" : "retry"} attempt ${p.attempt || "?"}: ${p.message || ""}`;
     }
+    if (evt.type === "runtime_error") {
+      return `fatal runtime error in ${p.handler || p.source || "handler"}: ${p.message || ""}`;
+    }
     if (evt.type === "tool_use") {
       return `${p.name}(${JSON.stringify(p.arguments || {})})`;
     }
@@ -1288,6 +1292,7 @@
     tool_use_argument_delta:   "streaming chunk of tool-use JSON arguments",
     tool_use_end:              "streaming bracket: tool-use block ends with parsed args",
     provider_error:            "provider failure captured by retry policy",
+    runtime_error:             "runtime failure captured by hook error policy",
     annotation:                "log-sourced derived state or opaque provider token",
     fork:                      "session fork lineage marker"
   };
@@ -1299,6 +1304,7 @@
       ["tool_use",          "tool use"],
       ["tool_result",       "tool result"],
       ["provider_error",    "provider error"],
+      ["runtime_error",     "runtime error"],
       ["annotation",        "annotation"],
       ["summary",           "synthetic compaction summary · replaces hidden events"],
       ["__dropped__",       "dimmed row = hidden from the projection by a :compact"]
@@ -1314,6 +1320,7 @@
       ["tool_use_argument_delta","argument delta (streaming)"],
       ["tool_result",           "tool result"],
       ["provider_error",        "provider error"],
+      ["runtime_error",         "runtime error"],
       ["annotation",            "annotation"],
       ["compact",               "mutation · hides a range of earlier events"],
       ["summary",               "synthetic block emitted by a :compact"],
@@ -1373,7 +1380,7 @@
     if (block.type === "summary")                     row.classList.add("is-summary");
     if (block.type === "compact")                     row.classList.add("is-compact");
     if (block.type === "annotation")                  row.classList.add("is-annotation");
-    if (block.type === "provider_error") {
+    if (block.type === "provider_error" || block.type === "runtime_error") {
       row.classList.add("is-provider-error");
       row.classList.add(block.rawPayload && block.rawPayload.terminal ? "fatal" : "retry");
     }
@@ -1420,7 +1427,7 @@
       tag.textContent = block.rawPayload.kind || "annotation";
       type.appendChild(tag);
     }
-    if (block.type === "provider_error" && block.rawPayload) {
+    if ((block.type === "provider_error" || block.type === "runtime_error") && block.rawPayload) {
       const tag = document.createElement("span");
       tag.className = "tag";
       tag.textContent = block.rawPayload.terminal ? "fatal" : "retry";
@@ -1488,6 +1495,13 @@
                `attempt: ${raw.payload.attempt}\n` +
                `message: ${raw.payload.message || ""}`;
       }
+      if (raw.type === "runtime_error") {
+        return `fatal runtime error\n` +
+               `source: ${raw.payload.source}\n` +
+               `handler: ${raw.payload.handler}\n` +
+               `class: ${raw.payload.error_class}\n` +
+               `message: ${raw.payload.message || ""}`;
+      }
       if (raw.type === "fork") {
         return "branched from seq " + (raw.payload && raw.payload.forked_at_seq);
       }
@@ -1550,7 +1564,7 @@
       dropped: compactBySeq[evt.seq] != null,
       hiddenBySeq: compactBySeq[evt.seq],
       guardMarked: guardMarked[evt.seq],
-      rawPayload: ["compact", "annotation", "provider_error", "fork"].includes(evt.type)
+      rawPayload: ["compact", "annotation", "provider_error", "runtime_error", "fork"].includes(evt.type)
         ? evt.payload
         : null
     }));
@@ -1584,7 +1598,7 @@
           t === "assistant_turn_failed") {
         return;
       }
-      if (t === "provider_error" || t === "annotation" || t === "fork") {
+      if (t === "provider_error" || t === "runtime_error" || t === "annotation" || t === "fork") {
         result.push({ type: t, tokens: tokenWidth(evt), seq: evt.seq, rawPayload: evt.payload });
         return;
       }

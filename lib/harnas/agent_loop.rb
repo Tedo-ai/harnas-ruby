@@ -54,8 +54,8 @@ module Harnas
         @max_turns.times do |turn|
           stop_reason = run_turn(turn)
 
-          if stop_reason == :provider_failed
-            reason = :provider_failed
+          if %i[provider_failed runtime_failed].include?(stop_reason)
+            reason = stop_reason
             break
           end
 
@@ -68,6 +68,9 @@ module Harnas
             reason = :no_pending_tools
             break
           end
+        rescue Hooks::TurnFailed
+          reason = :runtime_failed
+          break
         end
 
         @session.hooks.invoke(:session_ended, session: @session, reason: reason)
@@ -105,6 +108,8 @@ module Harnas
       loop do
         run_one_provider_attempt(request)
         return true
+      rescue Hooks::TurnFailed
+        raise
       rescue StandardError => e
         decision = @retry_policy.decide(e, attempt)
         if decision == :abort

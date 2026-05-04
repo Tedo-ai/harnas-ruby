@@ -3,6 +3,7 @@
 require "harnas/hooks"
 require "harnas/actions/compact"
 require "harnas/compaction/helpers"
+require "harnas/strategies/observation"
 
 module Harnas
   module Strategies
@@ -24,6 +25,8 @@ module Harnas
       # MessageCount trigger. The two will merge under one class once
       # the Trigger taxonomy lands (see devlog).
       class MarkerTail
+        include Harnas::Strategies::Observation
+
         # Normative default per spec/strategies/compaction/marker-tail.md.
         # "$N" is substituted with the decimal count of compacted events.
         DEFAULT_SUMMARY_FORMAT = "[snipped $N earlier messages]"
@@ -55,6 +58,13 @@ module Harnas
         end
 
         def on_pre_projection(session:)
+          observe_strategy(session, name: "Compaction::MarkerTail",
+                                    hook_point: :pre_projection) do
+            run_pre_projection(session)
+          end
+        end
+
+        def run_pre_projection(session)
           messages = Harnas::Compaction::Helpers.message_events(session.log)
           return if messages.size <= @max_messages
 
