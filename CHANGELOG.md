@@ -9,6 +9,17 @@ the specification as a whole.
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-05-05
+
+### Trust polish
+
+- Updated README version, fixture-count, and RSpec-count language to
+  match the verified v0.9.1 surface.
+- Added a buildable Ruby gemspec so the library has a concrete package
+  artifact even before RubyGems publishing.
+- Added `lib/harnas.rb` as the package-level require entry point.
+- Added normal push/PR CI for RSpec, RuboCop, and conformance.
+
 ### v0.9.1
 
 #### Added
@@ -18,6 +29,8 @@ the specification as a whole.
   available to handlers as `config:`.
 - Conformance now passes 28/28 fixtures, including
   `with-tool-config-roundtrip`.
+
+## [0.9.0] — 2026-05-05
 
 ### Added
 
@@ -317,6 +330,12 @@ Carryovers and deferred decisions, captured for posterity:
   wrapping, which covers most cases — the lifecycle mixin would
   be motivated by a concrete use case we haven't found yet.
 
+[0.9.1]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.9.1
+[0.9.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.9.0
+[0.8.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.8.0
+[0.7.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.7.0
+[0.6.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.6.0
+[0.5.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.4.0
 [0.2.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.1.0
