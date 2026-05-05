@@ -9,6 +9,16 @@ the specification as a whole.
 
 ## [Unreleased]
 
+### v0.9.1
+
+#### Added
+
+- Manifest tool entries may now declare opaque `config`; the Ruby
+  loader stores it in the Session manifest snapshot and makes it
+  available to handlers as `config:`.
+- Conformance now passes 28/28 fixtures, including
+  `with-tool-config-roundtrip`.
+
 ### Added
 
 - Added manifest-declared hook installation, `on_error: "fail_turn"`

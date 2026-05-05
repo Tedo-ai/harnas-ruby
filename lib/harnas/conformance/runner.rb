@@ -151,7 +151,7 @@ module Harnas
 
         Harnas::Hooks.scoped do
           loaded.install_strategies!
-          loaded = drive_inputs(loaded, scripted, inputs, streaming: streaming)
+          loaded = drive_inputs(loaded, scripted, inputs, manifest: manifest, streaming: streaming)
         end
 
         loaded.session
@@ -167,14 +167,14 @@ module Harnas
         end
       end
 
-      def self.drive_inputs(loaded, scripted, inputs, streaming: false)
+      def self.drive_inputs(loaded, scripted, inputs, manifest:, streaming: false)
         inputs.each do |input|
-          loaded = drive_input(loaded, scripted, input, streaming: streaming)
+          loaded = drive_input(loaded, scripted, input, manifest: manifest, streaming: streaming)
         end
         loaded
       end
 
-      def self.drive_input(loaded, scripted, input, streaming: false)
+      def self.drive_input(loaded, scripted, input, manifest:, streaming: false)
         if input.is_a?(Hash) && input.key?("compact")
           return append_compact(loaded, input.fetch("compact"))
         end
@@ -184,6 +184,7 @@ module Harnas
         if input.is_a?(Hash) && input.key?("fork")
           return fork_loaded(loaded, input.fetch("fork").fetch("at_seq"))
         end
+        return save_load(loaded, manifest: manifest) if input.is_a?(Hash) && input.key?("save_load")
 
         append_user_message(loaded, input)
         run_loop(loaded, scripted, streaming: streaming)
@@ -211,6 +212,22 @@ module Harnas
         forked = parent.fork(at_seq: at_seq)
         verify_fork!(parent, forked, at_seq)
         loaded.with_session(forked)
+      end
+
+      def self.save_load(loaded, manifest:)
+        Dir.mktmpdir("harnas-save-load") do |dir|
+          path = File.join(dir, "session.jsonl")
+          loaded.session.save(path)
+          reloaded = Harnas::Session.load(path)
+          verify_manifest_snapshot!(reloaded, manifest)
+          loaded.with_session(reloaded)
+        end
+      end
+
+      def self.verify_manifest_snapshot!(session, expected_manifest)
+        actual = normalize(session.metadata.fetch(:manifest))
+        expected = normalize(expected_manifest)
+        raise "manifest snapshot mismatch" unless actual == expected
       end
 
       def self.append_user_message(loaded, input)
@@ -263,6 +280,11 @@ module Harnas
       def self.conformance_tool_handlers
         Hash.new do |_, name|
           next ->(_args) { raise "conformance tool error" } if name == "conformance.raise_error"
+          if name == "conformance.echo_config"
+            next lambda { |_args, config:|
+              "[conformance config: #{canonical_json(config)}]"
+            }
+          end
 
           ->(args) { "[conformance stub: #{name}(#{canonical_json(args)})]" }
         end

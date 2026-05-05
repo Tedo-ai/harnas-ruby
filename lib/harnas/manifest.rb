@@ -81,7 +81,9 @@ module Harnas
 
       Loaded.new(
         name: manifest["name"],
-        session: Harnas::Session.create(metadata: { manifest_name: manifest["name"] }),
+        session: Harnas::Session.create(
+          metadata: { manifest_name: manifest["name"], manifest: manifest_snapshot(manifest) }
+        ),
         projection: provider_bundle[:projection],
         provider: provider_bundle[:provider],
         stream_provider: provider_bundle[:stream_provider],
@@ -433,6 +435,7 @@ module Harnas
             name: tool["name"],
             description: tool["description"],
             input_schema: symbolize_schema(tool["input_schema"]),
+            config: tool.fetch("config", {}),
             &handler
           )
         )
@@ -447,6 +450,10 @@ module Harnas
       when Array then schema.map { |v| symbolize_schema(v) }
       else            schema
       end
+    end
+
+    def self.manifest_snapshot(manifest)
+      JSON.parse(JSON.generate(manifest))
     end
 
     def self.build_strategies(strategies_spec, strategy_handlers:, provider_bundle:)
