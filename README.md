@@ -38,6 +38,17 @@ bundle exec bin/harnas inspect ~/.harnas/runs/<session>.jsonl
 bundle exec bin/harnas diff run-a.jsonl run-b.jsonl
 ```
 
+`bin/conformance.rb` resolves fixtures from a sibling checkout of
+[`Tedo-ai/harnas`](https://github.com/Tedo-ai/harnas), or from
+`HARNAS_SPEC` when set. For a fresh clone, put the spec and Ruby repos
+next to each other:
+
+```
+~/code/
+├── harnas/       ← clone of Tedo-ai/harnas
+└── harnas-ruby/  ← clone of Tedo-ai/harnas-ruby
+```
+
 `bin/harnas` is the manifest-driven CLI:
 
 - `harnas run <manifest> --input "..."` sends one prompt, prints the
