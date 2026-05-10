@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "harnas/skills"
 require "net/http"
 require "open3"
 require "pathname"
@@ -48,7 +49,8 @@ module Harnas
           "harnas.builtin.glob" => method(:glob),
           "harnas.builtin.grep" => method(:grep),
           "harnas.builtin.run_shell" => method(:run_shell),
-          "harnas.builtin.fetch_url" => method(:fetch_url)
+          "harnas.builtin.fetch_url" => method(:fetch_url),
+          "harnas.builtin.load_skill" => method(:load_skill)
         }
       end
 
@@ -167,6 +169,17 @@ module Harnas
             properties: { url: { type: "string" } },
             required: ["url"]
           }
+        },
+        {
+          name: "load_skill",
+          handler: "harnas.builtin.load_skill",
+          description: "Load the body of a named skill from the configured " \
+                       "skills directory.",
+          input_schema: {
+            type: "object",
+            properties: { name: { type: "string" } },
+            required: ["name"]
+          }
         }
       ].freeze
 
@@ -263,6 +276,24 @@ module Harnas
         body = response.body.to_s
         body = body.byteslice(0, MAX_FETCH_BYTES) if body.bytesize > MAX_FETCH_BYTES
         "HTTP #{response.code}\n#{body}"
+      end
+
+      def self.load_skill(args, config: {})
+        name = require_arg(args, :name)
+        raise "invalid skill name: #{name}" unless Harnas::Skills.valid_name?(name)
+
+        skills_dir = config[:skills_dir] || config["skills_dir"]
+        raise "missing skills_dir config" if skills_dir.to_s.empty?
+
+        allowed = Dir.glob(File.join(skills_dir, "*.md")).map { |path| File.basename(path, ".md") }
+        raise "unknown skill: #{name}" unless allowed.include?(name)
+
+        path = File.join(skills_dir, "#{name}.md")
+        strip = config.fetch(:strip_frontmatter, config.fetch("strip_frontmatter", true))
+        return File.read(path) unless strip
+
+        _frontmatter, body = Harnas::Skills.parse_skill_file(path)
+        body
       end
 
       # ---- helpers ----

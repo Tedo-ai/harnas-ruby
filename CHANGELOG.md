@@ -9,6 +9,18 @@ the specification as a whole.
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-05-10
+
+### Added
+
+- Added `Harnas::Skills.build_index`, which scans a skills directory
+  and emits the canonical `## Skills` system-prompt section.
+- Added the `harnas.builtin.load_skill` built-in tool with
+  config-driven `skills_dir`, frontmatter stripping, skill-name
+  validation, and empty-body support.
+- Conformance now passes 30/30 fixtures, including `with-skills` and
+  `with-skills-invalid-name`.
+
 ## [0.9.3] — 2026-05-10
 
 ### Informative
@@ -352,6 +364,7 @@ Carryovers and deferred decisions, captured for posterity:
   wrapping, which covers most cases — the lifecycle mixin would
   be motivated by a concrete use case we haven't found yet.
 
+[0.10.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.10.0
 [0.9.3]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.9.3
 [0.9.2]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.9.2
 [0.9.1]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.9.1

@@ -16,7 +16,8 @@ RSpec.describe Harnas::Tools::Builtin do
         "harnas.builtin.glob",
         "harnas.builtin.grep",
         "harnas.builtin.run_shell",
-        "harnas.builtin.fetch_url"
+        "harnas.builtin.fetch_url",
+        "harnas.builtin.load_skill"
       )
     end
 
@@ -59,6 +60,33 @@ RSpec.describe Harnas::Tools::Builtin do
     it "raises Errno::ENOENT when the file does not exist" do
       expect { described_class.read_file(path: "/nonexistent/harnas/xyz") }
         .to raise_error(Errno::ENOENT)
+    end
+  end
+
+  describe "load_skill" do
+    it "loads a skill body and strips frontmatter by default" do
+      Dir.mktmpdir do |dir|
+        File.write(File.join(dir, "git_workflow.md"), <<~MD)
+          ---
+          name: git_workflow
+          description: Git conventions
+          ---
+          Write crisp PR descriptions.
+        MD
+
+        result = described_class.load_skill(
+          { name: "git_workflow" },
+          config: { skills_dir: dir }
+        )
+
+        expect(result).to eq("Write crisp PR descriptions.\n")
+      end
+    end
+
+    it "rejects invalid skill names" do
+      expect do
+        described_class.load_skill({ name: "foo-bar" }, config: { skills_dir: "/tmp" })
+      end.to raise_error(RuntimeError, /invalid skill name: foo-bar/)
     end
   end
 

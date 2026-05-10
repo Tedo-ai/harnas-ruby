@@ -1,12 +1,14 @@
 # frozen_string_literal: true
 
 require "json"
+require "pathname"
 require "tmpdir"
 require "harnas/manifest"
 require "harnas/tools/runner"
 require "harnas/agent_loop"
 require "harnas/events/user_message"
 require "harnas/hooks"
+require "harnas/tools/builtin"
 require "harnas/conformance/scripted_provider"
 require "harnas/conformance/scripted_stream_provider"
 
@@ -56,6 +58,7 @@ module Harnas
       # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
       def self.run(dir)
         manifest = JSON.parse(File.read(File.join(dir, "manifest.json")))
+        manifest = resolve_fixture_paths(manifest, dir)
         script, streaming = load_provider_script(dir)
         inputs   = JSON.parse(File.read(File.join(dir, "inputs.json")))
         expected = load_expected(File.join(dir, "expected-log.jsonl"))
@@ -278,7 +281,7 @@ module Harnas
       # Fixtures whose agent loop invokes tools get deterministic,
       # language-neutral output.
       def self.conformance_tool_handlers
-        Hash.new do |_, name|
+        handlers = Hash.new do |_, name|
           next ->(_args) { raise "conformance tool error" } if name == "conformance.raise_error"
           if name == "conformance.echo_config"
             next lambda { |_args, config:|
@@ -288,6 +291,20 @@ module Harnas
 
           ->(args) { "[conformance stub: #{name}(#{canonical_json(args)})]" }
         end
+        handlers["harnas.builtin.load_skill"] = Harnas::Tools::Builtin.method(:load_skill)
+        handlers
+      end
+
+      def self.resolve_fixture_paths(manifest, fixture_dir)
+        updated = Marshal.load(Marshal.dump(manifest))
+        updated.fetch("tools", []).each do |tool|
+          config = tool["config"]
+          next unless config.is_a?(Hash) && config["skills_dir"].is_a?(String)
+          next if Pathname.new(config["skills_dir"]).absolute?
+
+          config["skills_dir"] = File.expand_path(config["skills_dir"], fixture_dir)
+        end
+        updated
       end
 
       def self.canonical_json(value)
