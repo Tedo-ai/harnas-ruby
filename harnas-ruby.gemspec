@@ -2,7 +2,7 @@
 
 Gem::Specification.new do |spec| # rubocop:disable Metrics/BlockLength
   spec.name = "harnas"
-  spec.version = "0.9.2"
+  spec.version = "0.9.3"
   spec.authors = ["René van Pelt"]
   spec.email = ["contact@renevanpe.lt"]
 

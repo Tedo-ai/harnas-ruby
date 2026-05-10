@@ -9,6 +9,15 @@ the specification as a whole.
 
 ## [Unreleased]
 
+## [0.9.3] — 2026-05-10
+
+### Informative
+
+- Tracks the v0.9.3 spec, which adds non-normative ecosystem
+  conventions for skills and MCP mappings. No Ruby runtime behavior
+  changes; the `load_skill` built-in and skills-index helper are
+  planned for v0.10.
+
 ## [0.9.2] — 2026-05-08
 
 ### Conformance
@@ -343,6 +352,7 @@ Carryovers and deferred decisions, captured for posterity:
   wrapping, which covers most cases — the lifecycle mixin would
   be motivated by a concrete use case we haven't found yet.
 
+[0.9.3]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.9.3
 [0.9.2]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.9.2
 [0.9.1]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.9.1
 [0.9.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.9.0
