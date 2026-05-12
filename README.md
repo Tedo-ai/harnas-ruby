@@ -15,7 +15,7 @@ spec/                        — RSpec tests (NB: spec/ is the rspec convention,
                                not the Harnas specification — that lives in
                                the Tedo-ai/harnas repo)
 bin/                         — CLI entry points: chat, conformance, web, smoke
-web/                         — single-file static UI for the live web inspector
+web/                         — modular static UI for the live web inspector
 config/defaults.yml          — per-provider model defaults
 examples/                    — 5 runnable example agents
 manifests/                   — example agent manifests (declarative JSON)
