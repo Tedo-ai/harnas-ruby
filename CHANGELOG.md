@@ -15,6 +15,8 @@ the specification as a whole.
   informative spec convention. It preserves shell working directory and
   environment changes across named sessions and returns both cumulative
   transcript fields and command-local stdout/stderr.
+- Added adopter helper surfaces: `Harnas::Runtime`,
+  `Harnas::Transcript.project`, and `Harnas::Tools::Snapshot`.
 
 ## [0.10.0] — 2026-05-10
 

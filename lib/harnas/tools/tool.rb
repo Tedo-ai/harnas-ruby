@@ -10,9 +10,9 @@ module Harnas
     # four methods — the Registry does not require inheritance from this
     # class.
     class Tool
-      attr_reader :name, :description, :input_schema, :config
+      attr_reader :name, :description, :input_schema, :config, :handler
 
-      def initialize(name:, description:, input_schema:, config: {}, &block)
+      def initialize(name:, description:, input_schema:, config: {}, handler: nil, &block)
         raise ArgumentError, "name must be a non-empty String" \
           unless name.is_a?(String) && !name.empty?
         raise ArgumentError, "description must be a String"    unless description.is_a?(String)
@@ -24,6 +24,7 @@ module Harnas
         @description  = description
         @input_schema = input_schema
         @config       = config
+        @handler      = handler
         @block        = block
       end
 

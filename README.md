@@ -142,6 +142,9 @@ Highlights:
 - Ten built-in tools (read_file, write_file, edit_file, list_dir, glob,
   grep, run_shell, fetch_url, load_skill, experimental bash_session)
   under `Harnas::Tools::Builtin`.
+- Adopter helper APIs: `Harnas::Runtime` for create/resume/save assembly,
+  `Harnas::Transcript.project` for UI-neutral Log views, and
+  `Harnas::Tools::Snapshot` for dynamic tool metadata.
 - Four canonical compaction strategies (MarkerTail, TokenMarkerTail,
   SummaryTail, ToolOutputCap).
 - Composable tool middleware (Timed, Logged, Retried, RateLimiter)

@@ -436,6 +436,7 @@ module Harnas
             description: tool["description"],
             input_schema: symbolize_schema(tool["input_schema"]),
             config: tool.fetch("config", {}),
+            handler: handler_name,
             &handler
           )
         )
