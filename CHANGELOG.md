@@ -9,6 +9,13 @@ the specification as a whole.
 
 ## [Unreleased]
 
+### Added
+
+- Added experimental `harnas.builtin.bash_session`, following the
+  informative spec convention. It preserves shell working directory and
+  environment changes across named sessions and returns both cumulative
+  transcript fields and command-local stdout/stderr.
+
 ## [0.10.0] — 2026-05-10
 
 ### Added

@@ -17,7 +17,8 @@ RSpec.describe Harnas::Tools::Builtin do
         "harnas.builtin.grep",
         "harnas.builtin.run_shell",
         "harnas.builtin.fetch_url",
-        "harnas.builtin.load_skill"
+        "harnas.builtin.load_skill",
+        "harnas.builtin.bash_session"
       )
     end
 
@@ -310,6 +311,114 @@ RSpec.describe Harnas::Tools::Builtin do
     end
   end
 
+  describe "bash_session" do
+    it "preserves working directory and environment in a named session" do
+      registry = described_class::BashSessionRegistry.new
+      Dir.mktmpdir do |dir|
+        first = parse_bash_result(
+          registry.call(
+            { session_id: "s1", command: "export MYVAR=hello && cd /tmp" },
+            config: { cwd: dir, max_output_bytes: 4096 }
+          )
+        )
+        expect(first.fetch("status")).to eq("completed")
+        expect(first.fetch("exit_code")).to eq(0)
+
+        second = parse_bash_result(
+          registry.call(
+            { session_id: "s1", command: "echo $MYVAR && pwd" },
+            config: { cwd: dir, max_output_bytes: 4096 }
+          )
+        )
+        expect(second.fetch("stdout")).to include("hello\n/tmp\n")
+      end
+    ensure
+      registry&.close
+    end
+
+    it "reports command-local output separately from cumulative output" do
+      registry = described_class::BashSessionRegistry.new
+      Dir.mktmpdir do |dir|
+        first = parse_bash_result(
+          registry.call(
+            { session_id: "s1", command: "printf first" },
+            config: { cwd: dir, max_output_bytes: 4096 }
+          )
+        )
+        expect(first.fetch("stdout")).to eq("first")
+        expect(first.fetch("command_stdout")).to eq("first")
+
+        second = parse_bash_result(
+          registry.call(
+            { session_id: "s1", command: "printf second >&2" },
+            config: { cwd: dir, max_output_bytes: 4096 }
+          )
+        )
+        expect(second.fetch("stdout")).to eq("first")
+        expect(second.fetch("command_stdout")).to eq("")
+        expect(second.fetch("stderr")).to eq("second")
+        expect(second.fetch("command_stderr")).to eq("second")
+      end
+    ensure
+      registry&.close
+    end
+
+    it "returns running on timeout and can kill the session" do
+      registry = described_class::BashSessionRegistry.new
+      running = parse_bash_result(
+        registry.call(
+          { session_id: "s1", command: "sleep 5", timeout_ms: 50 },
+          config: { cwd: Dir.tmpdir }
+        )
+      )
+      expect(running.fetch("status")).to eq("running")
+      expect(running.fetch("exit_code")).to be_nil
+
+      status = parse_bash_result(registry.call({ session_id: "s1", action: "status" }))
+      expect(status.fetch("status")).to eq("running")
+
+      killed = parse_bash_result(registry.call({ session_id: "s1", action: "kill" }))
+      expect(killed.fetch("status")).to eq("killed")
+    ensure
+      registry&.close
+    end
+
+    it "truncates output and strips ANSI escapes" do
+      registry = described_class::BashSessionRegistry.new
+      result = parse_bash_result(
+        registry.call(
+          { session_id: "s1", command: "printf '\\033[31m0123456789\\033[0m'" },
+          config: { cwd: Dir.tmpdir, max_output_bytes: 5 }
+        )
+      )
+      expect(result.fetch("truncated")).to eq(true)
+      expect(result.fetch("stdout")).to eq("56789")
+      expect(result.fetch("stdout")).not_to include("\e")
+    ensure
+      registry&.close
+    end
+
+    it "returns non-zero exits as tool output" do
+      registry = described_class::BashSessionRegistry.new
+      result = parse_bash_result(
+        registry.call({ session_id: "s1", command: "ruby -e 'exit 7'" })
+      )
+      expect(result.fetch("status")).to eq("completed")
+      expect(result.fetch("exit_code")).to eq(7)
+    ensure
+      registry&.close
+    end
+
+    it "raises clearly for unknown sessions" do
+      registry = described_class::BashSessionRegistry.new
+      expect do
+        registry.call({ session_id: "missing", action: "status" })
+      end.to raise_error(ArgumentError, /unknown bash_session session_id/)
+    ensure
+      registry&.close
+    end
+  end
+
   describe "fetch_url" do
     it "raises on unsupported schemes" do
       expect { described_class.fetch_url(url: "file:///etc/passwd") }
@@ -341,4 +450,8 @@ RSpec.describe Harnas::Tools::Builtin do
       end.not_to raise_error
     end
   end
+end
+
+def parse_bash_result(value)
+  JSON.parse(value)
 end

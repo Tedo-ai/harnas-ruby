@@ -5,6 +5,7 @@ require "harnas/skills"
 require "net/http"
 require "open3"
 require "pathname"
+require "securerandom"
 require "uri"
 
 module Harnas
@@ -50,7 +51,8 @@ module Harnas
           "harnas.builtin.grep" => method(:grep),
           "harnas.builtin.run_shell" => method(:run_shell),
           "harnas.builtin.fetch_url" => method(:fetch_url),
-          "harnas.builtin.load_skill" => method(:load_skill)
+          "harnas.builtin.load_skill" => method(:load_skill),
+          "harnas.builtin.bash_session" => bash_session_registry.method(:call)
         }
       end
 
@@ -180,6 +182,22 @@ module Harnas
             properties: { name: { type: "string" } },
             required: ["name"]
           }
+        },
+        {
+          name: "bash_session",
+          handler: "harnas.builtin.bash_session",
+          description: "Run a command in a persistent bash session. Sessions preserve " \
+                       "working directory and environment variables across calls. " \
+                       "stdin is /dev/null; interactive programs cannot receive input.",
+          input_schema: {
+            type: "object",
+            properties: {
+              session_id: { type: "string" },
+              command: { type: "string" },
+              action: { type: "string", enum: %w[run status kill] },
+              timeout_ms: { type: "integer", minimum: 1 }
+            }
+          }
         }
       ].freeze
 
@@ -294,6 +312,351 @@ module Harnas
 
         _frontmatter, body = Harnas::Skills.parse_skill_file(path)
         body
+      end
+
+      DEFAULT_BASH_SESSION_MAX_OUTPUT_BYTES = 64 * 1024
+      ANSI_PATTERN = /\e\[[0-9;]*[mGKHF]|\r/
+
+      def self.bash_session_registry
+        @bash_session_registry ||= BashSessionRegistry.new
+      end
+      private_class_method :bash_session_registry
+
+      class BashSessionRegistry
+        def initialize
+          @sessions = {}
+          @mutex = Mutex.new
+        end
+
+        def call(args, config: {})
+          action = fetch_optional(args, :action)
+          command = fetch_optional(args, :command)
+          action = "run" if action.to_s.empty? && !command.to_s.empty?
+          action = "status" if action.to_s.empty?
+          session_id = fetch_optional(args, :session_id)
+
+          result =
+            case action
+            when "run"
+              raise ArgumentError, "missing required argument: command" if command.to_s.empty?
+
+              session(session_id, config, create: true).run(
+                command,
+                timeout_ms(fetch_optional(args, :timeout_ms))
+              )
+            when "status"
+              session(session_id, config, create: false).status
+            when "kill"
+              session(session_id, config, create: false).kill
+            else
+              raise ArgumentError, "unknown bash_session action: #{action}"
+            end
+          JSON.generate(result)
+        end
+
+        def close
+          sessions = @mutex.synchronize do
+            values = @sessions.values
+            @sessions = {}
+            values
+          end
+          sessions.each(&:close)
+        end
+
+        private
+
+        def session(id, config, create:)
+          @mutex.synchronize do
+            return @sessions[id] if id && @sessions[id]
+            raise ArgumentError, "unknown bash_session session_id: #{id}" if id && !create
+            raise ArgumentError, "missing required argument: session_id" unless create
+
+            id = "sh_#{SecureRandom.hex(8)}" if id.to_s.empty?
+            @sessions[id] = BashSession.new(id, config)
+          end
+        end
+
+        def fetch_optional(args, key)
+          args[key] || args[key.to_s]
+        end
+
+        def timeout_ms(value)
+          value.to_i.positive? ? value.to_i / 1000.0 : nil
+        end
+      end
+
+      class BashSession
+        def initialize(id, config)
+          @id = id
+          @stdout = RingBuffer.new(max_output_bytes(config))
+          @stderr = RingBuffer.new(max_output_bytes(config))
+          @mutex = Mutex.new
+          @condition = ConditionVariable.new
+          @current = nil
+          @closed = false
+          start_shell(config)
+        end
+
+        def run(command, timeout)
+          current = start_command(command)
+          return snapshot("killed", nil, nil) unless current
+          return snapshot("killed", nil, current) if current[:write_failed]
+
+          wait_for_command(current, timeout)
+        end
+
+        def status
+          @mutex.synchronize do
+            return snapshot("running", nil, @current) if @current
+            return snapshot("killed", nil, nil) if @closed
+
+            snapshot("completed", nil, nil)
+          end
+        end
+
+        def kill
+          current = nil
+          @mutex.synchronize do
+            return snapshot("completed", nil, nil) unless @current
+
+            current = @current
+            kill_process_group("TERM")
+            @condition.wait(@mutex, 3) unless current_done?(current)
+            kill_process_group("KILL") unless current_done?(current)
+            @condition.wait(@mutex) until current_done?(current)
+            @closed = true
+            snapshot("killed", nil, current)
+          end
+        end
+
+        def close
+          @mutex.synchronize do
+            @closed = true
+            kill_process_group("KILL")
+          end
+        end
+
+        private
+
+        def max_output_bytes(config)
+          configured = config_value(config, :max_output_bytes).to_i
+          configured.positive? ? configured : DEFAULT_BASH_SESSION_MAX_OUTPUT_BYTES
+        end
+
+        def config_value(config, key)
+          config[key] || config[key.to_s]
+        end
+
+        def start_shell(config)
+          @stdin, stdout, stderr, @wait_thread = Open3.popen3(
+            resolve_shell(config),
+            chdir: resolve_cwd(config),
+            pgroup: true
+          )
+          @stdin.sync = true
+          @stdout_thread = Thread.new { read_stdout(stdout) }
+          @stderr_thread = Thread.new { read_stderr(stderr) }
+          @waiter_thread = Thread.new { wait_shell }
+        end
+
+        def resolve_shell(config)
+          shell = config_value(config, :shell).to_s
+          shell = "bash" if shell.empty?
+          shell == "bash" && !system("command -v bash >/dev/null 2>&1") ? "sh" : shell
+        end
+
+        def resolve_cwd(config)
+          cwd = config_value(config, :cwd).to_s
+          File.expand_path(cwd.empty? ? "." : cwd)
+        end
+
+        def start_command(command)
+          @mutex.synchronize do
+            @condition.wait(@mutex) while @current
+            return nil if @closed
+
+            current = new_command
+            @current = current
+            @stdin.write(framed_command(command, current[:token]))
+            current
+          rescue IOError, Errno::EPIPE
+            @current = nil
+            current[:write_failed] = true
+            current[:stdout_done] = true
+            current[:stderr_done] = true
+            complete(current)
+            current
+          end
+        end
+
+        def new_command
+          {
+            token: SecureRandom.hex(8),
+            stdout_start: @stdout.offset,
+            stderr_start: @stderr.offset,
+            stdout_done: false,
+            stderr_done: false,
+            exit_code: nil
+          }
+        end
+
+        def framed_command(command, token)
+          "\n{ #{command}\n} </dev/null; __harnas_status=$?; " \
+            "printf '__HARNAS_ERR_DONE_#{token}\\n' >&2; " \
+            "printf '__HARNAS_DONE_#{token}:%s\\n' \"$__harnas_status\"\n"
+        end
+
+        def wait_for_command(current, timeout)
+          @mutex.synchronize do
+            if timeout
+              @condition.wait(@mutex, timeout) unless current_done?(current)
+              return snapshot("running", nil, current) unless current_done?(current)
+            else
+              @condition.wait(@mutex) until current_done?(current)
+            end
+            snapshot("completed", current[:exit_code], current)
+          end
+        end
+
+        def read_stdout(io)
+          io.each_line do |line|
+            before, matched = stdout_sentinel(line)
+            @stdout.write(strip_ansi(before)) unless before.empty?
+            @stdout.write(strip_ansi(line)) unless matched
+          end
+        end
+
+        def read_stderr(io)
+          io.each_line do |line|
+            before, matched = stderr_sentinel(line)
+            @stderr.write(strip_ansi(before)) unless before.empty?
+            @stderr.write(strip_ansi(line)) unless matched
+          end
+        end
+
+        def stdout_sentinel(line)
+          index = line.index("__HARNAS_DONE_")
+          return ["", false] unless index
+
+          before = line[0...index]
+          token, code = line[index..].strip.delete_prefix("__HARNAS_DONE_").split(":", 2)
+          @mutex.synchronize do
+            if @current && @current[:token] == token
+              @current[:exit_code] = code.to_i
+              @current[:stdout_done] = true
+              complete_if_ready
+            end
+          end
+          [before, true]
+        end
+
+        def stderr_sentinel(line)
+          index = line.index("__HARNAS_ERR_DONE_")
+          return ["", false] unless index
+
+          before = line[0...index]
+          token = line[index..].strip.delete_prefix("__HARNAS_ERR_DONE_")
+          @mutex.synchronize do
+            if @current && @current[:token] == token
+              @current[:stderr_done] = true
+              complete_if_ready
+            end
+          end
+          [before, true]
+        end
+
+        def complete_if_ready
+          complete(@current) if @current && current_done?(@current)
+        end
+
+        def complete(current)
+          @current = nil if @current.equal?(current)
+          @condition.broadcast
+        end
+
+        def current_done?(current)
+          current && current[:stdout_done] && current[:stderr_done]
+        end
+
+        def wait_shell
+          status = @wait_thread.value
+          @mutex.synchronize do
+            @closed = true
+            if @current
+              @current[:exit_code] ||= status.exitstatus || -1
+              @current[:stdout_done] = true
+              @current[:stderr_done] = true
+              complete(@current)
+            end
+          end
+        end
+
+        def kill_process_group(signal)
+          Process.kill(signal, -@wait_thread.pid)
+        rescue Errno::ESRCH, Errno::EPERM
+          nil
+        end
+
+        def snapshot(status, exit_code, current)
+          {
+            session_id: @id,
+            status: status,
+            exit_code: exit_code,
+            stdout: @stdout.to_s,
+            stderr: @stderr.to_s,
+            command_stdout: current ? @stdout.from(current[:stdout_start]) : "",
+            command_stderr: current ? @stderr.from(current[:stderr_start]) : "",
+            truncated: @stdout.truncated? || @stderr.truncated?
+          }
+        end
+
+        def strip_ansi(value)
+          value.gsub(ANSI_PATTERN, "")
+        end
+      end
+
+      class RingBuffer
+        attr_reader :max
+
+        def initialize(max)
+          @max = max
+          @data = +""
+          @total = 0
+          @truncated = false
+          @mutex = Mutex.new
+        end
+
+        def write(value)
+          @mutex.synchronize do
+            @total += value.bytesize
+            @data << value
+            if @max.positive? && @data.bytesize > @max
+              @truncated = true
+              @data = @data.byteslice(@data.bytesize - @max, @max)
+            end
+          end
+        end
+
+        def offset
+          @mutex.synchronize { @total }
+        end
+
+        def from(offset)
+          @mutex.synchronize do
+            start_offset = @total - @data.bytesize
+            offset = start_offset if offset < start_offset
+            offset = @total if offset > @total
+            @data.byteslice(offset - start_offset, @data.bytesize).to_s
+          end
+        end
+
+        def truncated?
+          @mutex.synchronize { @truncated }
+        end
+
+        def to_s
+          @mutex.synchronize { @data.dup }
+        end
       end
 
       # ---- helpers ----
