@@ -9,12 +9,14 @@ the specification as a whole.
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-05-17
+
 ### Added
 
-- Added experimental `harnas.builtin.bash_session`, following the
-  informative spec convention. It preserves shell working directory and
-  environment changes across named sessions and returns both cumulative
-  transcript fields and command-local stdout/stderr.
+- Promoted `harnas.builtin.bash_session` to the conformable surface. It
+  preserves shell working directory and environment changes across named
+  sessions and returns both cumulative transcript fields and
+  command-local stdout/stderr.
 - Added `Harnas::MCP` with HTTP and stdio transport clients. MCP tool
   descriptors translate to namespaced Harnas tools automatically, with
   dynamic handlers that call back into the MCP server.
@@ -23,6 +25,8 @@ the specification as a whole.
   failures log a warning and return an empty tool list.
 - Added adopter helper surfaces: `Harnas::Runtime`,
   `Harnas::Transcript.project`, and `Harnas::Tools::Snapshot`.
+- Conformance now passes 34/34 fixtures, including the four
+  `bash_session` fixtures.
 
 ## [0.10.0] — 2026-05-10
 
@@ -379,6 +383,7 @@ Carryovers and deferred decisions, captured for posterity:
   wrapping, which covers most cases — the lifecycle mixin would
   be motivated by a concrete use case we haven't found yet.
 
+[0.11.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.11.0
 [0.10.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.10.0
 [0.9.3]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.9.3
 [0.9.2]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.9.2

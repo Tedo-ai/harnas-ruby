@@ -292,6 +292,8 @@ module Harnas
           ->(args) { "[conformance stub: #{name}(#{canonical_json(args)})]" }
         end
         handlers["harnas.builtin.load_skill"] = Harnas::Tools::Builtin.method(:load_skill)
+        handlers["harnas.builtin.bash_session"] =
+          Harnas::Tools::Builtin.handlers.fetch("harnas.builtin.bash_session")
         handlers
       end
 
@@ -299,12 +301,19 @@ module Harnas
         updated = Marshal.load(Marshal.dump(manifest))
         updated.fetch("tools", []).each do |tool|
           config = tool["config"]
-          next unless config.is_a?(Hash) && config["skills_dir"].is_a?(String)
-          next if Pathname.new(config["skills_dir"]).absolute?
+          next unless config.is_a?(Hash)
 
-          config["skills_dir"] = File.expand_path(config["skills_dir"], fixture_dir)
+          resolve_fixture_config_path!(config, "skills_dir", fixture_dir)
+          resolve_fixture_config_path!(config, "cwd", fixture_dir)
         end
         updated
+      end
+
+      def self.resolve_fixture_config_path!(config, key, fixture_dir)
+        return unless config[key].is_a?(String)
+        return if Pathname.new(config[key]).absolute?
+
+        config[key] = File.expand_path(config[key], fixture_dir)
       end
 
       def self.canonical_json(value)
