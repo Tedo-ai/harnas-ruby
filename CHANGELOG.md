@@ -15,6 +15,12 @@ the specification as a whole.
   informative spec convention. It preserves shell working directory and
   environment changes across named sessions and returns both cumulative
   transcript fields and command-local stdout/stderr.
+- Added `Harnas::MCP` with HTTP and stdio transport clients. MCP tool
+  descriptors translate to namespaced Harnas tools automatically, with
+  dynamic handlers that call back into the MCP server.
+- Added MCP content flattening for text, image, resource, and unknown
+  content types, plus degraded startup behavior where discovery
+  failures log a warning and return an empty tool list.
 - Added adopter helper surfaces: `Harnas::Runtime`,
   `Harnas::Transcript.project`, and `Harnas::Tools::Snapshot`.
 

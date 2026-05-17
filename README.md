@@ -2,7 +2,7 @@
 
 Ruby reference implementation of [Harnas](https://github.com/Tedo-ai/harnas) —
 a specification for LLM agent harnesses. Passes 30/30 conformance fixtures
-against the spec; live providers Anthropic + OpenAI + Gemini; 610 RSpec
+against the spec; live providers Anthropic + OpenAI + Gemini; 631 RSpec
 examples; rubocop clean.
 
 **Version 0.10.0** (2026-05-10). Tracks Harnas spec 0.10.0.
@@ -29,7 +29,7 @@ LICENSE                      — MIT
 
 ```sh
 bundle install
-bundle exec rspec               # 610 examples
+bundle exec rspec               # 631 examples
 bundle exec rubocop             # clean
 bundle exec bin/conformance.rb  # 30/30 fixtures
 bundle exec bin/harnas run examples/01-hello-world/manifest.json --input "hello"
@@ -98,6 +98,46 @@ forked = agent.session.fork(at_seq: 12)
 retry_agent = agent.from_session(forked)
 retry_agent.chat("try a different approach")
 ```
+
+## MCP adapters
+
+`Harnas::MCP` connects an MCP server and translates its discovered tools
+into ordinary Harnas tool descriptors. HTTP JSON-RPC and stdio
+subprocess transports share the same interface; failures during
+handshake or tool discovery degrade to an empty tool list so an optional
+MCP server does not crash agent startup.
+
+```ruby
+mcp = Harnas::MCP.connect(
+  url: ENV.fetch("EDITORIAL_AI_MCP_URL"),
+  server_name: "editorial-ai"
+)
+
+manifest = {
+  "harnas_version" => "0.1",
+  "name" => "editorial-pipeline",
+  "provider" => { "kind" => "anthropic", "model" => "claude-sonnet-4-5" },
+  "system" => editorial_brief,
+  "tools" => mcp.tools,
+  "strategies" => []
+}
+
+runtime = Harnas::Runtime.build(
+  manifest: manifest,
+  tool_handlers: mcp.tool_handlers,
+  metadata: { "story_uid" => uid }
+)
+
+result = runtime.agent.chat("Process story #{uid}. Run the full pipeline.")
+```
+
+For stdio servers, pass `command:` and optional `args:` instead of
+`url:`. MCP tool names are exposed to the model as
+`<server>.<tool>` (for example, `editorial-ai.fetch_story`) while the
+adapter calls the original MCP tool name on the wire. Tool results are
+flattened to a single string: text items join with blank lines, images
+and resources become concise placeholders, and unknown content types
+remain visible as typed placeholders.
 
 ## Live providers
 
