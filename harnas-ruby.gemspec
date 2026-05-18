@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-Gem::Specification.new do |spec| # rubocop:disable Metrics/BlockLength
-  spec.name = "harnas"
+Gem::Specification.new do |spec|
+  spec.name = "harnas-ruby"
   spec.version = "0.12.0"
   spec.authors = ["René van Pelt"]
   spec.email = ["contact@renevanpe.lt"]
@@ -11,7 +11,8 @@ Gem::Specification.new do |spec| # rubocop:disable Metrics/BlockLength
                      "a specification for LLM agent harnesses."
   spec.homepage = "https://github.com/Tedo-ai/harnas-ruby"
   spec.license = "MIT"
-  spec.required_ruby_version = ">= 3.4"
+  # The runtime uses Ruby's Data class, which is available in Ruby 3.2+.
+  spec.required_ruby_version = ">= 3.2" # rubocop:disable Gemspec/RequiredRubyVersion
 
   spec.metadata = {
     "source_code_uri" => "https://github.com/Tedo-ai/harnas-ruby",
@@ -28,10 +29,10 @@ Gem::Specification.new do |spec| # rubocop:disable Metrics/BlockLength
   spec.require_paths = ["lib"]
 
   spec.add_dependency "dotenv", "~> 3.1"
-  spec.add_dependency "faye-websocket", "~> 0.12"
   spec.add_dependency "httpx", "~> 1.7"
   spec.add_dependency "json_schemer", "~> 2.5"
-  spec.add_dependency "puma", "~> 8.0"
-  spec.add_dependency "rack", "~> 3.2"
-  spec.add_dependency "rackup", "~> 2.3"
+
+  # Web inspector only: add rack ~> 3.2, rackup ~> 2.3,
+  # puma ~> 8.0, and faye-websocket ~> 0.12 to your Gemfile if
+  # using bin/web.rb.
 end

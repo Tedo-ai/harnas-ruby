@@ -22,14 +22,22 @@ require "optparse"
 require "json"
 require "tempfile"
 require "fileutils"
-require "rack"
-require "rackup"
-require "puma"
-require "puma/configuration"
-require "puma/launcher"
-require "puma/events"
-require "faye/websocket"
-require "eventmachine"
+
+begin
+  require "rack"
+  require "rackup"
+  require "puma"
+  require "puma/configuration"
+  require "puma/launcher"
+  require "puma/events"
+  require "faye/websocket"
+  require "eventmachine"
+rescue LoadError => e
+  raise LoadError,
+        "harnas web inspector requires rack, rackup, puma, and faye-websocket. " \
+        "Add them to your Gemfile if using bin/web.rb: #{e.message}"
+end
+
 require "dotenv/load"
 
 require "harnas/config"

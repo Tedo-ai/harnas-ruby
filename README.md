@@ -25,6 +25,37 @@ CHANGELOG.md                 — release notes
 LICENSE                      — MIT
 ```
 
+## Compatibility
+
+**Ruby:** 3.2 and above.
+
+The runtime uses Ruby's `Data` class, which is built into Ruby 3.2+.
+
+**Ruby 3.4 note:** Ruby 3.4 removed several standard library files that were
+previously bundled automatically. If you are on Ruby 3.4 and see `LoadError`
+for any of the following, add them explicitly to your Gemfile:
+
+```ruby
+gem "mutex_m"
+gem "bigdecimal"
+gem "ostruct"
+gem "drb"
+gem "csv"
+gem "base64"
+gem "logger"
+gem "benchmark"
+```
+
+This is a Ruby ecosystem issue, not a harnas issue, but the list above covers
+what Rails 7.0 + common gems need.
+
+**Rails:** harnas-ruby has no Rails dependency. It embeds into any Rails
+version. The web inspector (`bin/web.rb`) requires `rack ~> 3.2`,
+`rackup ~> 2.3`, `puma ~> 8.0`, and `faye-websocket ~> 0.12`, which conflict
+with Rails 7.0's rack 2.x. If you are on Rails 7.0 and do not need the web
+inspector, no action is required: the agent runtime works as-is. If you need
+the web inspector on Rails 7.0, run it as a separate process.
+
 ## Run
 
 ```sh

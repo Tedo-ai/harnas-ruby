@@ -9,6 +9,16 @@ the specification as a whole.
 
 ## [Unreleased]
 
+### Fixed
+
+- Removed web-inspector-only dependencies (`rack`, `rackup`, `puma`, and
+  `faye-websocket`) from the core gemspec so `require "harnas"` can embed
+  cleanly in Rails applications with their own web stack. `bin/web.rb` now
+  raises a clear LoadError explaining which gems to add when the web
+  inspector is used.
+- Aligned the gemspec package name with the repository/install name:
+  `harnas-ruby`. The runtime require path remains `require "harnas"`.
+
 ## [0.12.0] — 2026-05-18
 
 ### Added
