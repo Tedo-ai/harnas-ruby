@@ -14,13 +14,16 @@ require "harnas/session"
 require "harnas/tools/builtin"
 
 module Harnas
-  class CLI
+  class CLI # rubocop:disable Metrics/ClassLength
     include SessionCommands
     include Usage
 
     EXIT_SUCCESS = 0
-    EXIT_USAGE = 1
-    EXIT_PROVIDER_ERROR = 2
+    EXIT_AGENT_ERROR = 1
+    EXIT_USAGE = 2
+    EXIT_APPROVAL_REJECTED = 3
+    EXIT_SANDBOX_VIOLATION = 4
+    EXIT_PROVIDER_ERROR = EXIT_AGENT_ERROR
 
     def initialize(argv:, stdin: $stdin, stdout: $stdout, stderr: $stderr, env: ENV)
       @argv = argv.dup
@@ -93,17 +96,33 @@ module Harnas
       EXIT_SUCCESS
     end
 
-    def run_once
+    def run_once # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
       options = parse_run_options
       raise OptionParser::MissingArgument, "--input" if options[:input].to_s.empty?
 
       agent = build_agent(options)
+      started = Time.now
       response = agent.chat(options[:input])
       error = terminal_provider_error(agent)
+      runtime_error = terminal_runtime_error(agent)
       save_session(agent)
+      if options[:output_format] == "ndjson"
+        write_ndjson(agent, started: started, status: ndjson_status(error, runtime_error))
+        return ndjson_exit(error, runtime_error)
+      end
+      if runtime_error&.payload&.dig(:reason) == "sandbox_violation_limit"
+        @stderr.puts "sandbox violation: #{runtime_error.payload[:message]}"
+        return EXIT_SANDBOX_VIOLATION
+      end
       if error
         @stderr.puts "provider error: #{format_provider_error(error)}"
+        flush_assistant_messages(agent)
         return EXIT_PROVIDER_ERROR
+      end
+      if runtime_error
+        @stderr.puts "runtime error: #{runtime_error.payload[:message]}"
+        flush_assistant_messages(agent)
+        return EXIT_AGENT_ERROR
       end
 
       @stdout.puts response.text
@@ -142,6 +161,9 @@ module Harnas
       parser = OptionParser.new do |opts|
         opts.banner = "usage: harnas run <manifest> --input TEXT [--provider KIND] [--model MODEL]"
         opts.on("--input TEXT", "User input to send as one turn") { |v| options[:input] = v }
+        opts.on("--output-format FORMAT", "text (default) or ndjson") do |v|
+          options[:output_format] = v
+        end
         provider_model_options(opts, options)
         opts.on("-h", "--help") { print_help(opts) }
       end
@@ -159,7 +181,7 @@ module Harnas
       exit EXIT_SUCCESS
     end
 
-    def default_options = { provider: nil, model: nil, input: nil }
+    def default_options = { provider: nil, model: nil, input: nil, output_format: "text" }
 
     def build_agent(options)
       manifest = load_manifest(options)
@@ -212,6 +234,12 @@ module Harnas
       nil
     end
 
+    def terminal_runtime_error(agent)
+      agent.log.reverse_each.find do |event|
+        event.type == :runtime_error && event.payload[:terminal]
+      end
+    end
+
     def print_delta(delta)
       @stdout.print delta.payload[:chunk] if delta.type == :assistant_text_delta
     end
@@ -230,6 +258,81 @@ module Harnas
       agent.session.save(path)
       @stderr.puts "saved: #{path}"
       path
+    end
+
+    def flush_assistant_messages(agent)
+      messages = agent.log.select { |event| event.type == :assistant_message }
+      messages.each_with_index do |event, index|
+        @stdout.puts "---" if index.positive?
+        @stdout.puts event.payload[:text]
+      end
+    end
+
+    def write_ndjson(agent, started:, status:) # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength
+      # rubocop:disable Metrics/BlockLength
+      agent.log.each do |event|
+        ts = Time.now.utc.iso8601
+        case event.type
+        when :tool_use
+          @stdout.puts JSON.generate(type: "tool_call", tool: event.payload[:name],
+                                     input: event.payload[:arguments], ts: ts)
+        when :tool_result
+          @stdout.puts JSON.generate(
+            type: "tool_result",
+            status: event.payload[:error] ? "error" : "success",
+            message: event.payload[:error] || event.payload[:output],
+            ts: ts
+          )
+        when :assistant_message
+          Array(event.payload[:reasoning]).each do |block|
+            content = block[:text].to_s
+            next if content.empty?
+
+            @stdout.puts JSON.generate(type: "thinking", content: content, ts: ts)
+          end
+          @stdout.puts JSON.generate(type: "agent_text", content: event.payload[:text], ts: ts) \
+            unless event.payload[:text].to_s.empty?
+        when :provider_error
+          @stdout.puts JSON.generate(type: "provider_error", message: event.payload[:message],
+                                     attempt: event.payload[:attempt], ts: ts)
+        when :runtime_error
+          @stdout.puts JSON.generate(type: "error", reason: event.payload[:reason],
+                                     message: event.payload[:message], ts: ts)
+        end
+      end
+      # rubocop:enable Metrics/BlockLength
+      usage = agent.log.each_with_object({ input: 0, output: 0 }) do |event, total|
+        next unless event.type == :assistant_message
+
+        usage = event.payload[:usage] || {}
+        total[:input] += usage[:input_tokens].to_i
+        total[:output] += usage[:output_tokens].to_i
+      end
+      @stdout.puts JSON.generate(type: "done", status: status,
+                                 tokens_used: usage,
+                                 duration_ms: ((Time.now - started) * 1000).to_i,
+                                 ts: Time.now.utc.iso8601)
+    end
+
+    def ndjson_status(provider_error, runtime_error)
+      if runtime_error&.payload&.dig(:reason) == "sandbox_violation_limit"
+        return "sandbox_violation"
+      end
+
+      return runtime_error.payload[:reason] if runtime_error
+      return "failed" if provider_error
+
+      "completed"
+    end
+
+    def ndjson_exit(provider_error, runtime_error)
+      if runtime_error&.payload&.dig(:reason) == "sandbox_violation_limit"
+        return EXIT_SANDBOX_VIOLATION
+      end
+
+      return EXIT_AGENT_ERROR if provider_error || runtime_error
+
+      EXIT_SUCCESS
     end
 
     def run_path(name)

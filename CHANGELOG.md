@@ -9,6 +9,17 @@ the specification as a whole.
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-05-18
+
+### Added
+
+- Added `sandbox/write`, `guard/repetition`, `guard/timeout`, and
+  `guard/cost_budget` strategies.
+- Added `--output-format ndjson` for `bin/harnas run`.
+- Applied the shared CLI exit-code taxonomy and partial stdout flush on
+  exit-1 agent failures.
+- Conformance now passes 39/39 fixtures.
+
 ## [0.11.0] — 2026-05-17
 
 ### Added
@@ -383,6 +394,7 @@ Carryovers and deferred decisions, captured for posterity:
   wrapping, which covers most cases — the lifecycle mixin would
   be motivated by a concrete use case we haven't found yet.
 
+[0.12.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.12.0
 [0.11.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.11.0
 [0.10.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.10.0
 [0.9.3]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.9.3

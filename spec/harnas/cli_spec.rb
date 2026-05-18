@@ -169,7 +169,7 @@ RSpec.describe Harnas::CLI do
         env: { "HOME" => @home }
       )
 
-      expect(status).to eq(2)
+      expect(status).to eq(1)
       expect(stdout).to eq("")
       expect(stderr).to include("provider error: HTTP 503: unavailable")
     end

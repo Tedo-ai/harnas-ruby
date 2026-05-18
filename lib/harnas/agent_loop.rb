@@ -46,6 +46,7 @@ module Harnas
       @on_stream_event = on_stream_event
     end
 
+    # rubocop:disable Metrics/BlockLength, Metrics/MethodLength
     def run
       Observation.with_current(@session.observation) do
         @session.hooks.invoke(:session_started, session: @session)
@@ -64,7 +65,12 @@ module Harnas
             break
           end
 
-          if dispatch_pending_tools.empty?
+          dispatched = dispatch_pending_tools
+          if terminal_runtime_error?
+            reason = :runtime_failed
+            break
+          end
+          if dispatched.empty?
             reason = :no_pending_tools
             break
           end
@@ -77,6 +83,7 @@ module Harnas
         reason
       end
     end
+    # rubocop:enable Metrics/BlockLength, Metrics/MethodLength
 
     private
 
@@ -84,6 +91,8 @@ module Harnas
       @session.hooks.invoke(:turn_started, session: @session, turn: turn)
 
       @session.hooks.invoke(:pre_projection, session: @session)
+      return :runtime_failed if terminal_runtime_error?
+
       request = @projection.call(@session.log)
       @session.hooks.invoke(:post_projection, session: @session, request: request)
 
@@ -192,6 +201,10 @@ module Harnas
       pending = pending_tool_uses
       pending.each { |tu| dispatch_one_tool(tu) }
       pending
+    end
+
+    def terminal_runtime_error?
+      @session.log.any? { |event| event.type == :runtime_error && event.payload[:terminal] }
     end
 
     def dispatch_one_tool(tool_use_event)

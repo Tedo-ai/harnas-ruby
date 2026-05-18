@@ -65,11 +65,13 @@ module Harnas
         expected_deltas_path = File.join(dir, "expected-deltas.jsonl")
         expected_strategy_events_path = File.join(dir, "expected-strategy-events.jsonl")
 
-        actual, actual_deltas, actual_strategy_events = run_agent_with_sidecars(
-          manifest, script, inputs, streaming: streaming,
-                                    expected_deltas_path: expected_deltas_path,
-                                    expected_strategy_events_path: expected_strategy_events_path
-        )
+        actual, actual_deltas, actual_strategy_events = Dir.chdir(dir) do
+          run_agent_with_sidecars(
+            manifest, script, inputs, streaming: streaming,
+                                      expected_deltas_path: expected_deltas_path,
+                                      expected_strategy_events_path: expected_strategy_events_path
+          )
+        end
 
         diff = first_mismatch(actual, expected)
         if diff.nil? && File.exist?(expected_deltas_path)
@@ -292,6 +294,10 @@ module Harnas
           ->(args) { "[conformance stub: #{name}(#{canonical_json(args)})]" }
         end
         handlers["harnas.builtin.load_skill"] = Harnas::Tools::Builtin.method(:load_skill)
+        handlers["harnas.builtin.write_file"] =
+          Harnas::Tools::Builtin.handlers.fetch("harnas.builtin.write_file")
+        handlers["harnas.builtin.edit_file"] =
+          Harnas::Tools::Builtin.handlers.fetch("harnas.builtin.edit_file")
         handlers["harnas.builtin.bash_session"] =
           Harnas::Tools::Builtin.handlers.fetch("harnas.builtin.bash_session")
         handlers

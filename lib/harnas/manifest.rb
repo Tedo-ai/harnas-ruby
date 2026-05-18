@@ -276,7 +276,15 @@ module Harnas
       "Permission::DenyByName" =>
         "harnas/strategies/permission/deny_by_name",
       "Permission::HumanApproval" =>
-        "harnas/strategies/permission/human_approval"
+        "harnas/strategies/permission/human_approval",
+      "sandbox/write" =>
+        "harnas/strategies/sandbox/write",
+      "guard/repetition" =>
+        "harnas/strategies/guard/repetition",
+      "guard/timeout" =>
+        "harnas/strategies/guard/timeout",
+      "guard/cost_budget" =>
+        "harnas/strategies/guard/cost_budget"
     }.freeze
 
     STRATEGY_CLASS_NAMES = {
@@ -293,7 +301,15 @@ module Harnas
       "Permission::DenyByName" =>
         "Harnas::Strategies::Permission::DenyByName",
       "Permission::HumanApproval" =>
-        "Harnas::Strategies::Permission::HumanApproval"
+        "Harnas::Strategies::Permission::HumanApproval",
+      "sandbox/write" =>
+        "Harnas::Strategies::Sandbox::Write",
+      "guard/repetition" =>
+        "Harnas::Strategies::Guard::Repetition",
+      "guard/timeout" =>
+        "Harnas::Strategies::Guard::Timeout",
+      "guard/cost_budget" =>
+        "Harnas::Strategies::Guard::CostBudget"
     }.freeze
 
     # Which config fields each strategy expects as external-world callables.
