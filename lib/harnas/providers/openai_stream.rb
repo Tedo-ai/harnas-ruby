@@ -30,8 +30,11 @@ module Harnas
         "content_filter" => :refusal
       }.freeze
 
-      def initialize(api_key:)
+      def initialize(api_key:, endpoint: "https://api.openai.com/v1/chat/completions",
+                     authorization: true)
         @api_key = api_key
+        @endpoint = endpoint
+        @authorization = authorization
       end
 
       def call(request, &block)
@@ -62,7 +65,7 @@ module Harnas
       end
 
       def stream_wire_events(body, state, &)
-        uri = URI("https://api.openai.com/v1/chat/completions")
+        uri = URI(@endpoint)
         Net::HTTP.start(uri.host, uri.port, use_ssl: true) do |http|
           req = build_request(uri, body)
           http.request(req) do |response|
@@ -75,6 +78,7 @@ module Harnas
       def build_request(uri, body)
         req = Net::HTTP::Post.new(uri)
         req["authorization"] = "Bearer #{@api_key}"
+        req.delete("authorization") unless @authorization
         req["content-type"]  = "application/json"
         req["accept"]        = "text/event-stream"
         req.body = JSON.generate(body)

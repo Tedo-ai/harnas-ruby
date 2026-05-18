@@ -243,12 +243,13 @@ module Harnas
     end
 
     def append_denial(tool_use_event, reason)
+      reason ||= "no reason given"
       @session.log.append(
         type: :tool_result,
         payload: Events::ToolResult.new(
           tool_use_id: tool_use_event.payload[:id],
-          error: "denied by hook: #{reason || "no reason given"}"
-        ).to_h
+          error: "denied by hook: #{reason}"
+        ).to_h.merge(approval: { decision: "rejected", reason: reason })
       )
     end
   end

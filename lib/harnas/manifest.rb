@@ -237,6 +237,17 @@ module Harnas
         ingestor_class: "Harnas::Ingestors::OpenAI",
         api_key_required: true
       },
+      "ollama" => {
+        projection: "harnas/projections/openai",
+        provider: "harnas/providers/ollama",
+        stream_provider: "harnas/providers/ollama_stream",
+        ingestor: "harnas/ingestors/openai",
+        projection_class: "Harnas::Projections::OpenAI",
+        provider_class: "Harnas::Providers::Ollama",
+        stream_provider_class: "Harnas::Providers::OllamaStream",
+        ingestor_class: "Harnas::Ingestors::OpenAI",
+        api_key_required: false
+      },
       "gemini" => {
         projection: "harnas/projections/gemini",
         provider: "harnas/providers/gemini",
@@ -283,6 +294,8 @@ module Harnas
         "harnas/strategies/guard/repetition",
       "guard/timeout" =>
         "harnas/strategies/guard/timeout",
+      "guard/health" =>
+        "harnas/strategies/guard/health",
       "guard/cost_budget" =>
         "harnas/strategies/guard/cost_budget"
     }.freeze
@@ -308,6 +321,8 @@ module Harnas
         "Harnas::Strategies::Guard::Repetition",
       "guard/timeout" =>
         "Harnas::Strategies::Guard::Timeout",
+      "guard/health" =>
+        "Harnas::Strategies::Guard::Health",
       "guard/cost_budget" =>
         "Harnas::Strategies::Guard::CostBudget"
     }.freeze
@@ -375,9 +390,10 @@ module Harnas
       {
         projection: build_projection_instance(classes[:projection], provider_spec, registry,
                                               system),
-        provider: build_provider_instance(classes[:provider], kind, info, api_keys),
+        provider: build_provider_instance(classes[:provider], kind, info, api_keys,
+                                          provider_spec),
         stream_provider: build_stream_provider_instance(classes[:stream_provider], kind, info,
-                                                        api_keys),
+                                                        api_keys, provider_spec),
         ingestor: classes[:ingestor].new
       }
     end
@@ -401,15 +417,19 @@ module Harnas
       projection_klass.new(**kwargs)
     end
 
-    def self.build_provider_instance(provider_klass, kind, info, api_keys)
+    def self.build_provider_instance(provider_klass, kind, info, api_keys, provider_spec)
+      params = provider_klass.instance_method(:initialize).parameters.map { |(_, n)| n }
+      kwargs = {}
+      kwargs[:base_url] = provider_spec["base_url"] if params.include?(:base_url) &&
+                                                       provider_spec["base_url"]
       if info[:api_key_required]
         key = api_keys[kind.to_sym] || api_keys[kind]
         raise Error, "api_keys[#{kind.inspect}] is required for provider #{kind}" if key.nil?
 
-        provider_klass.new(api_key: key)
-      else
-        provider_klass.new
+        kwargs[:api_key] = key
       end
+
+      provider_klass.new(**kwargs)
     end
 
     def self.stream_provider_class(info)
@@ -419,10 +439,10 @@ module Harnas
       Object.const_get(class_name)
     end
 
-    def self.build_stream_provider_instance(stream_klass, kind, info, api_keys)
+    def self.build_stream_provider_instance(stream_klass, kind, info, api_keys, provider_spec)
       return nil if stream_klass.nil?
 
-      build_provider_instance(stream_klass, kind, info, api_keys)
+      build_provider_instance(stream_klass, kind, info, api_keys, provider_spec)
     end
 
     def self.resolve_api_keys(api_keys)

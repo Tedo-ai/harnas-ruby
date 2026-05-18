@@ -1,11 +1,11 @@
 # harnas-ruby
 
 Ruby reference implementation of [Harnas](https://github.com/Tedo-ai/harnas) —
-a specification for LLM agent harnesses. Passes 39/39 conformance fixtures
-against the spec; live providers Anthropic + OpenAI + Gemini; 640 RSpec
+a specification for LLM agent harnesses. Passes 41/41 conformance fixtures
+against the spec; live providers Anthropic + OpenAI + Gemini + Ollama; 642 RSpec
 examples; rubocop clean.
 
-**Version 0.12.0** (2026-05-18). Tracks Harnas spec 0.12.0.
+**Version 0.13.0** (2026-05-18). Tracks Harnas spec 0.13.0.
 
 ## What's in here
 
@@ -62,7 +62,7 @@ the web inspector on Rails 7.0, run it as a separate process.
 bundle install
 bundle exec rspec               # 640 examples
 bundle exec rubocop             # clean
-bundle exec bin/conformance.rb  # 39/39 fixtures
+bundle exec bin/conformance.rb  # 41/41 fixtures
 bundle exec bin/harnas run examples/01-hello-world/manifest.json --input "hello"
 bundle exec bin/harnas chat examples/05-codebase-qa/manifest.json
 bundle exec bin/harnas inspect ~/.harnas/runs/<session>.jsonl
@@ -194,6 +194,7 @@ Same prompt across providers:
 ```sh
 bundle exec ruby examples/05-codebase-qa/run.rb --provider openai "..."
 bundle exec ruby examples/05-codebase-qa/run.rb --provider gemini "..."
+bundle exec ruby examples/05-codebase-qa/run.rb --provider ollama "..."
 ```
 
 Each run auto-saves to `examples/05-codebase-qa/runs/<provider>-<timestamp>.jsonl`

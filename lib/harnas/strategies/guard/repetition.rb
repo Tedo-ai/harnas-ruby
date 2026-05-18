@@ -7,17 +7,22 @@ module Harnas
   module Strategies
     module Guard
       class Repetition
-        def self.install(session = nil, max_consecutive_failures: 3, max_identical_calls: 5)
+        def self.install(session = nil, max_consecutive_failures: 3, max_identical_calls: 5,
+                         max_consecutive_rejections: 3)
           new(
             max_consecutive_failures: max_consecutive_failures,
-            max_identical_calls: max_identical_calls
+            max_identical_calls: max_identical_calls,
+            max_consecutive_rejections: max_consecutive_rejections
           ).install(session&.hooks || Hooks)
         end
 
-        def initialize(max_consecutive_failures: 3, max_identical_calls: 5)
+        def initialize(max_consecutive_failures: 3, max_identical_calls: 5,
+                       max_consecutive_rejections: 3)
           @max_consecutive_failures = max_consecutive_failures
           @max_identical_calls = max_identical_calls
+          @max_consecutive_rejections = max_consecutive_rejections
           @consecutive_failures = 0
+          @consecutive_rejections = 0
           @calls = Hash.new(0)
         end
 
@@ -44,6 +49,14 @@ module Harnas
               if @consecutive_failures >= @max_consecutive_failures
           else
             @consecutive_failures = 0
+          end
+
+          if tool_result&.payload&.dig(:approval, :decision) == "rejected"
+            @consecutive_rejections += 1
+            fire!(session, "consecutive_rejections", tool_use, @consecutive_rejections) \
+              if @consecutive_rejections >= @max_consecutive_rejections
+          else
+            @consecutive_rejections = 0
           end
           nil
         end
