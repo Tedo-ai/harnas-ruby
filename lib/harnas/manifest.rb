@@ -25,19 +25,17 @@ module Harnas
     SUPPORTED_VERSIONS = %w[0.1].freeze
 
     # Resolution order for the spec's JSON Schema:
-    #   1. HARNAS_SPEC env var pointing at a checkout of Tedo-ai/harnas
-    #   2. ../../../harnas/schemas/... (sibling clone — coordinator layout)
-    #   3. ../../../spec/schemas/...   (legacy monorepo internal layout)
-    SCHEMA_PATH =
-      if ENV["HARNAS_SPEC"]
-        File.join(ENV["HARNAS_SPEC"], "schemas", "agent-manifest.schema.json")
-      elsif File.exist?(File.expand_path("../../../harnas/schemas/agent-manifest.schema.json",
-                                         __dir__))
-        File.expand_path("../../../harnas/schemas/agent-manifest.schema.json",
-                         __dir__)
-      else
-        File.expand_path("../../../spec/schemas/agent-manifest.schema.json", __dir__)
-      end
+    #   1. Bundled gem path — works for standalone gem installs.
+    #   2. HARNAS_SPEC env var pointing at a checkout of Tedo-ai/harnas.
+    #   3. ../../../harnas/schemas/... (sibling clone — coordinator layout).
+    #   4. ../../../spec/schemas/...   (legacy monorepo internal layout).
+    SCHEMA_PATH = [
+      File.join(__dir__, "schemas", "agent-manifest.schema.json"),
+      ENV.fetch("HARNAS_SPEC", nil) && File.join(ENV.fetch("HARNAS_SPEC", nil),
+                                                 "schemas", "agent-manifest.schema.json"),
+      File.expand_path("../../../harnas/schemas/agent-manifest.schema.json", __dir__),
+      File.expand_path("../../../spec/schemas/agent-manifest.schema.json", __dir__)
+    ].compact.find { |path| File.exist?(path) }
 
     class Error < StandardError; end
     class ValidationError < Error; end

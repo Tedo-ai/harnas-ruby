@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harnas.dev/schemas/agent-manifest-0.1.schema.json",
+  "title": "Harnas Agent Manifest",
+  "description": "Normative schema for the Harnas Agent Manifest format, v0.1. See spec/18-agent-manifest.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["harnas_version", "name", "provider", "tools", "strategies"],
+  "properties": {
+    "harnas_version": {
+      "type": "string",
+      "enum": ["0.1"],
+      "description": "Manifest spec version. v0.1 accepts only the literal '0.1'."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable identifier for the agent."
+    },
+    "system": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional system prompt. When present, the runtime MUST project it into the provider-specific system-message slot (Anthropic top-level `system`, OpenAI `role: \"system\"` message, Gemini `systemInstruction`)."
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "max_tokens"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["anthropic", "openai", "gemini", "ollama", "mock"],
+          "description": "Selects the Projection + Provider + Ingestor triplet."
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Model identifier. Required for non-mock providers."
+        },
+        "max_tokens": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Upper bound on response length, in tokens."
+        },
+        "base_url": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional provider base URL. Used by local or compatible providers such as Ollama."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "kind": { "not": { "const": "mock" } } }
+          },
+          "then": { "required": ["model"] }
+        }
+      ]
+    },
+    "tools": {
+      "type": "array",
+      "description": "Tools the agent may invoke. Empty array means no tools.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "handler", "description", "input_schema"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Tool name, unique within this manifest."
+          },
+          "handler": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Symbolic reference to the tool implementation, resolved by the runtime against a handler map."
+          },
+          "description": {
+            "type": "string",
+            "description": "Tool description, passed to the provider."
+          },
+          "input_schema": {
+            "type": "object",
+            "description": "JSON Schema describing the tool's argument shape."
+          },
+          "config": {
+            "type": "object",
+            "description": "Implementer-opaque JSON-serializable configuration preserved with the tool entry and made available to the resolved handler."
+          }
+        }
+      }
+    },
+    "strategies": {
+      "type": "array",
+      "description": "Canonical strategies (Layer 2) to install. Empty array means no strategies.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^([A-Z][A-Za-z0-9]+::[A-Z][A-Za-z0-9]+|[a-z][a-z0-9_-]*/[a-z][a-z0-9_-]*)$",
+            "description": "Canonical strategy name, e.g. 'Compaction::Snip' or 'sandbox/write'. Matches the directory structure under spec/strategies/."
+          },
+          "config": {
+            "type": "object",
+            "description": "Configuration passed to the strategy's install method. Must match the strategy's Configuration section in its spec stub. Callable parameters are given as symbolic references (Strings) here."
+          },
+          "on_error": {
+            "$ref": "#/$defs/on_error"
+          }
+        }
+      }
+    },
+    "hooks": {
+      "type": "array",
+      "description": "Hook handlers to install at Session start. Empty or absent means no manifest-declared hooks.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["point", "handler"],
+        "properties": {
+          "point": {
+            "type": "string",
+            "enum": [
+              ":session_started",
+              ":session_ended",
+              ":turn_started",
+              ":turn_ended",
+              ":pre_projection",
+              ":post_projection",
+              ":pre_provider_call",
+              ":post_provider_call",
+              ":pre_ingest",
+              ":post_ingest",
+              ":pre_tool_use",
+              ":post_tool_use"
+            ],
+            "description": "Canonical Hook Point from spec/14-hooks.md."
+          },
+          "handler": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Symbolic reference to the hook implementation, resolved by the runtime against a handler map."
+          },
+          "config": {
+            "type": "object",
+            "description": "Configuration passed to the handler at install time."
+          },
+          "on_error": {
+            "$ref": "#/$defs/on_error"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "on_error": {
+      "type": "string",
+      "enum": ["isolate", "fail_turn"],
+      "default": "isolate",
+      "description": "Invocation-time hook error policy."
+    }
+  }
+}

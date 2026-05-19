@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and Harnas adheres to [Semantic Versioning](https://semver.org/) on
 the specification as a whole.
 
+## [0.13.1] — 2026-05-19
+
+### Fixed
+
+- Bundled `agent-manifest.schema.json` inside the gem and made the bundled
+  copy the primary schema resolution path, fixing standalone gem installs
+  outside the Tedo monorepo.
+
 ## [0.13.0] — 2026-05-18
 
 ### Fixed
@@ -412,6 +420,7 @@ Carryovers and deferred decisions, captured for posterity:
   wrapping, which covers most cases — the lifecycle mixin would
   be motivated by a concrete use case we haven't found yet.
 
+[0.13.1]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.13.1
 [0.13.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.13.0
 [0.12.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.12.0
 [0.11.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.11.0

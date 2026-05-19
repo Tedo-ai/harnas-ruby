@@ -2,7 +2,7 @@
 
 Gem::Specification.new do |spec|
   spec.name = "harnas-ruby"
-  spec.version = "0.13.0"
+  spec.version = "0.13.1"
   spec.authors = ["René van Pelt"]
   spec.email = ["contact@renevanpe.lt"]
 
@@ -21,8 +21,8 @@ Gem::Specification.new do |spec|
   }
 
   spec.files = Dir.chdir(__dir__) do
-    Dir.glob("{bin,config,lib,web}/**/*", File::FNM_DOTMATCH)
-       .reject { |path| File.directory?(path) }
+    Dir["lib/**/*", "bin/*", "config/**/*", "web/**/*", "*.md", "LICENSE"]
+      .reject { |path| File.directory?(path) }
   end
   spec.bindir = "bin"
   spec.executables = ["harnas"]

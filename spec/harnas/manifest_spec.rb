@@ -40,6 +40,17 @@ RSpec.describe Harnas::Manifest do
   end
 
   describe "schema validation" do
+    it "resolves the schema from the bundled gem path" do
+      ENV.delete("HARNAS_SPEC")
+
+      bundled_schema = File.expand_path(
+        "../../lib/harnas/schemas/agent-manifest.schema.json",
+        __dir__
+      )
+      expect(described_class::SCHEMA_PATH).to eq(bundled_schema)
+      expect(File.exist?(described_class::SCHEMA_PATH)).to be true
+    end
+
     it "rejects a manifest missing required top-level fields" do
       expect { described_class.load({ "harnas_version" => "0.1", "name" => "x" }) }
         .to raise_error(Harnas::Manifest::ValidationError)
