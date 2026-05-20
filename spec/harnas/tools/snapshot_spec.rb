@@ -24,7 +24,8 @@ RSpec.describe Harnas::Tools::Snapshot do
           "handler" => "harnas.builtin.load_skill",
           "description" => "Load a skill",
           "input_schema" => { "type" => "object" },
-          "config" => { "skills_dir" => "/tmp/skills" }
+          "config" => { "skills_dir" => "/tmp/skills" },
+          "args_key_style" => "symbol"
         }
       ]
     )

@@ -58,12 +58,16 @@ module Harnas
     #                    matching provider env var.
     # rubocop:disable Metrics/MethodLength
     def self.load(source, tool_handlers: {}, strategy_handlers: {}, hook_handlers: {},
-                  api_keys: {})
-      manifest = parse_source(source)
-      validate!(manifest)
+                  api_keys: {}, args_key_style: :symbol)
+      manifest = validated_manifest(source)
       check_version!(manifest["harnas_version"])
+      default_args_key_style = normalize_args_key_style(args_key_style)
 
-      registry        = build_registry(manifest["tools"], tool_handlers: tool_handlers)
+      registry = build_registry(
+        manifest["tools"],
+        tool_handlers: tool_handlers,
+        args_key_style: default_args_key_style
+      )
       provider_bundle = build_provider(
         manifest["provider"],
         api_keys: api_keys,
@@ -90,6 +94,13 @@ module Harnas
         strategies: strategies,
         hooks: hooks
       )
+    end
+
+    def self.validated_manifest(source)
+      manifest = parse_source(source)
+      validate_tool_descriptor_types!(manifest["tools"]) if manifest.is_a?(Hash)
+      validate!(manifest)
+      manifest
     end
     # rubocop:enable Metrics/MethodLength
 
@@ -455,14 +466,19 @@ module Harnas
       }.merge(explicit)
     end
 
-    def self.build_registry(tools_spec, tool_handlers:)
+    def self.build_registry(tools_spec, tool_handlers:, args_key_style: :symbol)
       registry = Harnas::Tools::Registry.new
 
       tools_spec.each do |tool|
+        validate_tool_descriptor_type!(tool)
+
         handler_name = tool["handler"]
         handler      = tool_handlers[handler_name] ||
                        (raise UnresolvedHandlerError,
                               "tool handler #{handler_name.inspect} not in tool_handlers")
+        tool_args_key_style = normalize_args_key_style(
+          tool.fetch("args_key_style", args_key_style)
+        )
 
         registry.register(
           Harnas::Tools::Tool.new(
@@ -471,12 +487,35 @@ module Harnas
             input_schema: symbolize_schema(tool["input_schema"]),
             config: tool.fetch("config", {}),
             handler: handler_name,
+            args_key_style: tool_args_key_style,
             &handler
           )
         )
       end
 
       registry
+    end
+
+    def self.validate_tool_descriptor_types!(tools)
+      return unless tools.is_a?(Array)
+
+      tools.each { |tool| validate_tool_descriptor_type!(tool) }
+    end
+
+    def self.validate_tool_descriptor_type!(tool)
+      return if tool.is_a?(Hash)
+
+      raise ArgumentError,
+            "tools[] entries must be Hash descriptors, not #{tool.class} instances. " \
+            "Pass callable handlers via tool_handlers: on Runtime.build — " \
+            "e.g. Runtime.build(manifest: ..., tool_handlers: mcp.tool_handlers)"
+    end
+
+    def self.normalize_args_key_style(value)
+      normalized = value.to_sym if value.respond_to?(:to_sym)
+      return normalized if %i[symbol string].include?(normalized)
+
+      raise ArgumentError, "args_key_style must be :symbol or :string"
     end
 
     def self.symbolize_schema(schema)

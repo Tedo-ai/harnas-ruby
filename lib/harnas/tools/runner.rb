@@ -20,7 +20,7 @@ module Harnas
 
         begin
           tool   = @registry[payload[:name]]
-          output = tool.call(payload[:arguments])
+          output = tool.call(arguments_for(tool, payload[:arguments] || {}))
           emit(tool_use_event, :ok, monotonic_ms - started)
           into_log.append(
             type: :tool_result,
@@ -42,6 +42,14 @@ module Harnas
       end
 
       private
+
+      def arguments_for(tool, raw_args)
+        case tool.args_key_style
+        when :string then raw_args.transform_keys(&:to_s)
+        when :symbol then raw_args.transform_keys(&:to_sym)
+        else              raw_args
+        end
+      end
 
       def emit(tool_use_event, outcome, duration_ms, error = nil)
         Observation.emit(

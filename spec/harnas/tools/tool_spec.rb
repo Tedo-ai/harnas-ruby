@@ -19,6 +19,7 @@ RSpec.describe Harnas::Tools::Tool do
     expect(tool.name).to eq("echo")
     expect(tool.description).to eq("returns what you give it")
     expect(tool.input_schema).to eq(schema)
+    expect(tool.args_key_style).to eq(:symbol)
   end
 
   it "executes the block on #call" do
@@ -48,6 +49,17 @@ RSpec.describe Harnas::Tools::Tool do
     expect do
       described_class.new(name: "x", description: "", input_schema: "nope") { |_| "" }
     end.to raise_error(ArgumentError, /input_schema must be a Hash/)
+  end
+
+  it "rejects an invalid args_key_style" do
+    expect do
+      described_class.new(
+        name: "x",
+        description: "",
+        input_schema: {},
+        args_key_style: :camel
+      ) { |_| "" }
+    end.to raise_error(ArgumentError, /args_key_style/)
   end
 
   it "requires a block" do

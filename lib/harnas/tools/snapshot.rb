@@ -9,13 +9,17 @@ module Harnas
     module Snapshot
       def self.descriptors(registry)
         registry.tools.map do |tool|
-          {
+          descriptor = {
             "name" => tool.name,
             "handler" => tool.respond_to?(:handler) && tool.handler ? tool.handler : tool.name,
             "description" => tool.description,
             "input_schema" => deep_json_copy(tool.input_schema),
             "config" => deep_json_copy(tool.respond_to?(:config) ? tool.config : {})
           }
+          if tool.respond_to?(:args_key_style)
+            descriptor["args_key_style"] = tool.args_key_style.to_s
+          end
+          descriptor
         end
       end
 

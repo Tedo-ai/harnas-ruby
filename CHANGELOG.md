@@ -7,6 +7,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and Harnas adheres to [Semantic Versioning](https://semver.org/) on
 the specification as a whole.
 
+## [0.13.2] — 2026-05-20
+
+### Added
+
+- Added `args_key_style` for tool dispatch. Runtime callers can set
+  `args_key_style: :string` globally, or a tool descriptor can set
+  `"args_key_style": "string"` to receive JSON-native string keys.
+
+### Fixed
+
+- Added a clear manifest error when a `Harnas::Tools::Tool` instance is
+  accidentally passed in `tools[]` instead of a Hash descriptor, with guidance
+  to pass callables through `tool_handlers:`.
+
 ## [0.13.1] — 2026-05-19
 
 ### Fixed
@@ -420,6 +434,7 @@ Carryovers and deferred decisions, captured for posterity:
   wrapping, which covers most cases — the lifecycle mixin would
   be motivated by a concrete use case we haven't found yet.
 
+[0.13.2]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.13.2
 [0.13.1]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.13.1
 [0.13.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.13.0
 [0.12.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.12.0

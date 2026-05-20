@@ -10,14 +10,17 @@ module Harnas
     # four methods — the Registry does not require inheritance from this
     # class.
     class Tool
-      attr_reader :name, :description, :input_schema, :config, :handler
+      attr_reader :name, :description, :input_schema, :config, :handler, :args_key_style
 
-      def initialize(name:, description:, input_schema:, config: {}, handler: nil, &block)
+      def initialize(name:, description:, input_schema:, config: {}, handler: nil,
+                     args_key_style: :symbol, &block)
         raise ArgumentError, "name must be a non-empty String" \
           unless name.is_a?(String) && !name.empty?
         raise ArgumentError, "description must be a String"    unless description.is_a?(String)
         raise ArgumentError, "input_schema must be a Hash"     unless input_schema.is_a?(Hash)
         raise ArgumentError, "config must be a Hash"           unless config.is_a?(Hash)
+        raise ArgumentError, "args_key_style must be :symbol or :string" \
+          unless %i[symbol string].include?(args_key_style)
         raise ArgumentError, "block required to implement #call" unless block
 
         @name         = name
@@ -25,7 +28,8 @@ module Harnas
         @input_schema = input_schema
         @config       = config
         @handler      = handler
-        @block        = block
+        @args_key_style = args_key_style
+        @block = block
       end
 
       def call(arguments)

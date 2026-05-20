@@ -54,6 +54,41 @@ RSpec.describe Harnas::Tools::Runner do
         expect(e[:duration_ms]).to be_a(Integer)
       end
     end
+
+    it "passes symbol-keyed arguments by default" do
+      seen = nil
+      registry.register(
+        Harnas::Tools::Tool.new(name: "capture", description: "", input_schema: {}) do |args|
+          seen = args
+          "ok"
+        end
+      )
+      tu = append_tool_use(id: "toolu_capture", name: "capture", arguments: { "text" => "hi" })
+
+      runner.run(tu, into_log: log)
+
+      expect(seen).to eq({ text: "hi" })
+    end
+
+    it "passes string-keyed arguments when the tool requests string style" do
+      seen = nil
+      registry.register(
+        Harnas::Tools::Tool.new(
+          name: "capture",
+          description: "",
+          input_schema: {},
+          args_key_style: :string
+        ) do |args|
+          seen = args
+          "ok"
+        end
+      )
+      tu = append_tool_use(id: "toolu_capture", name: "capture", arguments: { text: "hi" })
+
+      runner.run(tu, into_log: log)
+
+      expect(seen).to eq({ "text" => "hi" })
+    end
   end
 
   describe "failed execution" do

@@ -2,10 +2,10 @@
 
 Ruby reference implementation of [Harnas](https://github.com/Tedo-ai/harnas) —
 a specification for LLM agent harnesses. Passes 41/41 conformance fixtures
-against the spec; live providers Anthropic + OpenAI + Gemini + Ollama; 643 RSpec
+against the spec; live providers Anthropic + OpenAI + Gemini + Ollama; 650 RSpec
 examples; rubocop clean.
 
-**Version 0.13.1** (2026-05-19). Tracks Harnas spec 0.13.0.
+**Version 0.13.2** (2026-05-20). Tracks Harnas spec 0.13.0.
 
 ## What's in here
 
@@ -138,6 +138,10 @@ subprocess transports share the same interface; failures during
 handshake or tool discovery degrade to an empty tool list so an optional
 MCP server does not crash agent startup.
 
+`tool_handlers:` is required whenever your manifest includes tools whose
+handlers are not built-ins. Omitting it produces an unhelpful runtime
+error.
+
 ```ruby
 mcp = Harnas::MCP.connect(
   url: ENV.fetch("EDITORIAL_AI_MCP_URL"),
@@ -154,8 +158,9 @@ manifest = {
 }
 
 runtime = Harnas::Runtime.build(
-  manifest: manifest,
-  tool_handlers: mcp.tool_handlers,
+  manifest:      manifest,          # tool descriptors (name, description, schema)
+  tool_handlers: mcp.tool_handlers, # callables — required when using MCP tools
+  args_key_style: :string,          # MCP arguments are JSON-native string keys
   metadata: { "story_uid" => uid }
 )
 
@@ -169,6 +174,14 @@ adapter calls the original MCP tool name on the wire. Tool results are
 flattened to a single string: text items join with blank lines, images
 and resources become concise placeholders, and unknown content types
 remain visible as typed placeholders.
+
+### Tool argument key style
+
+Tool handlers receive symbol-keyed argument hashes by default
+(`{ model: "gpt-4", temperature: 0.7 }`). If you are integrating with MCP,
+LangChain, or any framework that uses string keys, set
+`args_key_style: :string` on `Runtime.build` or per tool in the manifest
+descriptor.
 
 ## Live providers
 

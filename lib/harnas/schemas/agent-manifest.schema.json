@@ -86,6 +86,11 @@
           "config": {
             "type": "object",
             "description": "Implementer-opaque JSON-serializable configuration preserved with the tool entry and made available to the resolved handler."
+          },
+          "args_key_style": {
+            "type": "string",
+            "enum": ["symbol", "string"],
+            "description": "How parsed tool-call argument keys are presented to the handler. Defaults to symbol."
           }
         }
       }
