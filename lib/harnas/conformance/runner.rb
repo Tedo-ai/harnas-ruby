@@ -58,6 +58,7 @@ module Harnas
       # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
       def self.run(dir)
         manifest = JSON.parse(File.read(File.join(dir, "manifest.json")))
+        manifest.delete("fixture_version_added")
         manifest = resolve_fixture_paths(manifest, dir)
         script, streaming = load_provider_script(dir)
         inputs   = JSON.parse(File.read(File.join(dir, "inputs.json")))
@@ -92,6 +93,17 @@ module Harnas
         )
       end
       # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
+
+      def self.fixture_version(spec_root)
+        path = File.join(spec_root, "VERSION")
+        return nil unless File.file?(path)
+
+        File.readlines(path).each do |line|
+          key, value = line.split(":", 2).map(&:strip)
+          return value if key == "fixtures_version"
+        end
+        nil
+      end
 
       def self.run_agent(manifest, script, inputs, streaming: false)
         serialize_log(run_session(manifest, script, inputs, streaming: streaming).log)

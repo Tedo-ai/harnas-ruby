@@ -14,7 +14,7 @@
 # these cases.
 #
 # Usage:
-#   bundle exec bin/conformance.rb [fixture-name ...]
+#   bundle exec bin/conformance.rb [--fixtures-from PATH] [fixture-name ...]
 #
 # With no arguments, runs every fixture. With one or more names,
 # runs only those.
@@ -24,30 +24,42 @@ $LOAD_PATH.unshift File.expand_path("../lib", __dir__)
 require "json"
 require "harnas/conformance/runner"
 
-# Resolution order for the Harnas spec's conformance fixtures:
-#   1. HARNAS_SPEC env var pointing at a checkout of Tedo-ai/harnas
-#   2. ../harnas/conformance/agents (sibling clone — coordinator layout)
-#   3. ../../spec/conformance/agents (legacy monorepo internal layout)
-FIXTURES_DIR =
-  if ENV["HARNAS_SPEC"]
-    File.join(ENV["HARNAS_SPEC"], "conformance", "agents")
-  elsif File.directory?(File.expand_path("../../harnas/conformance/agents", __dir__))
-    File.expand_path("../../harnas/conformance/agents", __dir__)
+fixtures_from = nil
+remaining = []
+until ARGV.empty?
+  arg = ARGV.shift
+  if arg == "--fixtures-from"
+    fixtures_from = ARGV.shift or abort "--fixtures-from requires a path"
   else
-    File.expand_path("../../spec/conformance/agents", __dir__)
+    remaining << arg
   end
+end
+
+# Resolution order for the Harnas spec's conformance fixtures:
+SPEC_ROOT =
+  if fixtures_from
+    fixtures_from
+  elsif ENV["HARNAS_SPEC"]
+    ENV["HARNAS_SPEC"]
+  elsif File.directory?(File.expand_path("../../harnas/conformance/agents", __dir__))
+    File.expand_path("../../harnas", __dir__)
+  else
+    File.expand_path("../../spec", __dir__)
+  end
+
+FIXTURES_DIR = File.join(SPEC_ROOT, "conformance", "agents")
 
 unless File.directory?(FIXTURES_DIR)
   warn "no fixtures directory at #{FIXTURES_DIR}"
   exit 1
 end
 
-selected = if ARGV.empty?
+selected = if remaining.empty?
              Dir.children(FIXTURES_DIR).select do |name|
                File.directory?(File.join(FIXTURES_DIR, name))
              end.sort
            else
-             ARGV
+             remaining
            end
 
 if selected.empty?
@@ -81,6 +93,8 @@ end
 
 failed = results.count { |r| !r.passed }
 puts
-puts "#{results.size} fixtures · #{results.size - failed} passed · #{failed} failed"
+version = Harnas::Conformance::Runner.fixture_version(SPEC_ROOT)
+suffix = version ? " against fixtures v#{version}" : ""
+puts "#{results.size} fixtures · #{results.size - failed} passed · #{failed} failed#{suffix}"
 
 exit 1 if failed.positive?
