@@ -157,6 +157,31 @@ RSpec.describe Harnas::Session do
       expect(loaded.log.to_a).to eq(session.log.to_a)
     end
 
+    it "round-trips delegation metadata fields" do
+      session = described_class.new(
+        id: "ses_child",
+        metadata: { label: "child" },
+        parent_session_id: "ses_parent",
+        root_session_id: "ses_root",
+        spawn_id: "spn_1",
+        spawned_by_event_id: "evt_2_abc",
+        delegation_chain: [
+          { session_id: "ses_root", spawn_id: nil },
+          { session_id: "ses_parent", spawn_id: "spn_parent" }
+        ]
+      )
+
+      loaded = roundtrip(session)
+
+      expect(loaded.parent_session_id).to eq("ses_parent")
+      expect(loaded.root_session_id).to eq("ses_root")
+      expect(loaded.spawn_id).to eq("spn_1")
+      expect(loaded.spawned_by_event_id).to eq("evt_2_abc")
+      expect(loaded.delegation_chain.last).to eq(
+        { session_id: "ses_parent", spawn_id: "spn_parent" }
+      )
+    end
+
     it "writes a session-header line followed by one line per event" do
       session = described_class.new(id: "ses_h")
       session.log.append(type: :user_message, payload: { text: "hi" })

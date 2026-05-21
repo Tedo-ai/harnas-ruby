@@ -17,11 +17,17 @@ module Harnas
   # The Session itself is a frozen value object, but the Log it owns is
   # mutable: `session.log.append(...)` continues to work after the
   # Session has been constructed.
-  Session = Data.define(:id, :log, :metadata, :hooks, :observation) do
-    def initialize(id:, log: nil, metadata: {}, hooks: nil, observation: nil)
+  Session = Data.define(:id, :log, :metadata, :parent_session_id,
+                        :root_session_id, :spawn_id, :spawned_by_event_id,
+                        :delegation_chain, :hooks, :observation) do
+    def initialize(id:, log: nil, metadata: {}, parent_session_id: nil, # rubocop:disable Metrics/ParameterLists
+                   root_session_id: nil, spawn_id: nil, spawned_by_event_id: nil,
+                   delegation_chain: [], hooks: nil, observation: nil)
       raise ArgumentError, "id must be a String"        unless id.is_a?(String)
       raise ArgumentError, "id must not be empty"       if id.empty?
       raise ArgumentError, "metadata must be a Hash"    unless metadata.is_a?(Hash)
+      raise ArgumentError, "delegation_chain must be an Array" \
+        unless delegation_chain.is_a?(Array)
 
       observation ||= Observation.new
       hooks       ||= Hooks.new
@@ -38,15 +44,15 @@ module Harnas
     end
 
     # Convenience constructor: generates a UUID-suffixed id and a fresh Log.
-    def self.create(metadata: {})
-      new(id: "ses_#{SecureRandom.uuid}", metadata: metadata)
+    def self.create(metadata: {}, **delegation)
+      new(id: "ses_#{SecureRandom.uuid}", metadata: metadata, **delegation)
     end
 
     def install(strategy, **config)
       strategy.install(self, **config)
     end
 
-    def fork(at_seq:)
+    def fork(at_seq:) # rubocop:disable Metrics/AbcSize
       raise ArgumentError, "at_seq must be an Integer" unless at_seq.is_a?(Integer)
       raise ArgumentError, "at_seq out of range" if at_seq.negative? || at_seq >= log.size
 
@@ -62,7 +68,12 @@ module Harnas
       end
 
       self.class.create(
-        metadata: metadata.merge(forked_from: id, forked_at_seq: at_seq)
+        metadata: metadata.merge(forked_from: id, forked_at_seq: at_seq),
+        parent_session_id: parent_session_id,
+        root_session_id: root_session_id,
+        spawn_id: spawn_id,
+        spawned_by_event_id: spawned_by_event_id,
+        delegation_chain: delegation_chain
       ).with(log: forked_log)
     end
 
@@ -70,7 +81,12 @@ module Harnas
       other.is_a?(self.class) &&
         id == other.id &&
         log.equal?(other.log) &&
-        metadata == other.metadata
+        metadata == other.metadata &&
+        parent_session_id == other.parent_session_id &&
+        root_session_id == other.root_session_id &&
+        spawn_id == other.spawn_id &&
+        spawned_by_event_id == other.spawned_by_event_id &&
+        delegation_chain == other.delegation_chain
     end
 
     # Persist the Session as a JSONL file: one header line carrying
@@ -108,7 +124,12 @@ module Harnas
       new(
         id: header.fetch(:id),
         log: log,
-        metadata: header.fetch(:metadata, {})
+        metadata: header.fetch(:metadata, {}),
+        parent_session_id: header[:parent_session_id],
+        root_session_id: header[:root_session_id],
+        spawn_id: header[:spawn_id],
+        spawned_by_event_id: header[:spawned_by_event_id],
+        delegation_chain: header.fetch(:delegation_chain, [])
       )
     end
     private_class_method :load_from_io
@@ -128,12 +149,18 @@ module Harnas
 
     private
 
-    def write_to(io)
-      io.puts JSON.generate(
+    def write_to(io) # rubocop:disable Metrics/AbcSize
+      header = {
         Harnas::SESSION_HEADER_KEY => true,
         "id" => id,
         "metadata" => metadata
-      )
+      }
+      header["parent_session_id"] = parent_session_id if parent_session_id
+      header["root_session_id"] = root_session_id if root_session_id
+      header["spawn_id"] = spawn_id if spawn_id
+      header["spawned_by_event_id"] = spawned_by_event_id if spawned_by_event_id
+      header["delegation_chain"] = delegation_chain unless delegation_chain.empty?
+      io.puts JSON.generate(header)
       log.each do |event|
         io.puts JSON.generate(
           seq: event.seq,
