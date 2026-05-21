@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "harnas/log"
+require "harnas/capabilities"
 require "harnas/content_blocks"
 require "harnas/mutations"
 require "harnas/observation"
@@ -32,13 +33,17 @@ module Harnas
       # positive integer opts in. Even when Gemini does emit
       # thoughtSignatures, the Gemini ingestor + projection round-trip
       # them via :annotation events, so any setting is safe.
-      def initialize(model:, registry: nil, system: nil, thinking_budget: 0,
-                     attachment_store: nil)
+      def initialize(model:, registry: nil, system: nil, thinking_budget: 0, # rubocop:disable Metrics/ParameterLists
+                     attachment_store: nil, provider_kind: "gemini", capabilities: {},
+                     capability_mismatch_behavior: "metadata_fallback")
         @model           = model
         @registry        = registry
         @system          = system
         @thinking_budget = thinking_budget
         @attachment_store = attachment_store
+        @provider_kind = provider_kind
+        @capabilities = capabilities || {}
+        @capability_mismatch_behavior = capability_mismatch_behavior
       end
 
       def call(log)
@@ -119,12 +124,28 @@ module Harnas
             text = block[:text].to_s
             text.empty? ? nil : { text: text }
           when "image", "document"
+            fallback = fallback_if_unsupported(block)
+            next({ text: fallback[:text] }) if fallback
+
             resolved = ContentBlocks.resolve_data(block, @attachment_store)
             { inline_data: { mime_type: resolved[:media_type], data: resolved[:data] } }
           else
             raise ArgumentError, "unsupported Gemini content block type: #{block[:type]}"
           end
         end
+      end
+
+      def fallback_if_unsupported(block)
+        block_type = block[:type]
+        return nil if Capabilities.supported?(provider_kind: @provider_kind, model: @model,
+                                              overrides: @capabilities, block_type: block_type)
+
+        if Capabilities.mismatch_behavior(@capability_mismatch_behavior) == "error"
+          raise CapabilityMismatchError.new(provider_kind: @provider_kind, model: @model,
+                                            block_type: block_type)
+        end
+
+        Capabilities.fallback_block(block, @attachment_store)
       end
 
       # Tool calls merge into the trailing model entry if the previous

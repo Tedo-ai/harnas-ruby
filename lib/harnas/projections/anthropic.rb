@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "harnas/log"
+require "harnas/capabilities"
 require "harnas/content_blocks"
 require "harnas/mutations"
 require "harnas/observation"
@@ -21,13 +22,17 @@ module Harnas
     class Anthropic
       DEFAULT_MAX_TOKENS = 1024
 
-      def initialize(model:, max_tokens: DEFAULT_MAX_TOKENS, registry: nil, system: nil,
-                     attachment_store: nil)
+      def initialize(model:, max_tokens: DEFAULT_MAX_TOKENS, registry: nil, system: nil, # rubocop:disable Metrics/ParameterLists
+                     attachment_store: nil, provider_kind: "anthropic", capabilities: {},
+                     capability_mismatch_behavior: "metadata_fallback")
         @model      = model
         @max_tokens = max_tokens
         @registry   = registry
         @system     = system
         @attachment_store = attachment_store
+        @provider_kind = provider_kind
+        @capabilities = capabilities || {}
+        @capability_mismatch_behavior = capability_mismatch_behavior
       end
 
       def call(log)
@@ -111,13 +116,32 @@ module Harnas
           when "text"
             { type: "text", text: block[:text].to_s }
           when "image"
+            fallback = fallback_if_unsupported(block)
+            next fallback if fallback
+
             media_block("image", block)
           when "document"
+            fallback = fallback_if_unsupported(block)
+            next fallback if fallback
+
             media_block("document", block)
           else
             raise ArgumentError, "unsupported content block type: #{block[:type]}"
           end
         end
+      end
+
+      def fallback_if_unsupported(block)
+        block_type = block[:type]
+        return nil if Capabilities.supported?(provider_kind: @provider_kind, model: @model,
+                                              overrides: @capabilities, block_type: block_type)
+
+        if Capabilities.mismatch_behavior(@capability_mismatch_behavior) == "error"
+          raise CapabilityMismatchError.new(provider_kind: @provider_kind, model: @model,
+                                            block_type: block_type)
+        end
+
+        Capabilities.fallback_block(block, @attachment_store)
       end
 
       def media_block(kind, block)

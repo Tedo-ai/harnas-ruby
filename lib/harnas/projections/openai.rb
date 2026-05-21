@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "harnas/capabilities"
 require "harnas/content_blocks"
 require "harnas/log"
 require "harnas/mutations"
@@ -24,11 +25,16 @@ module Harnas
     # An assistant turn that only emits tool_use (no text) becomes
     # `{ role: "assistant", content: null, tool_calls: [...] }`.
     class OpenAI
-      def initialize(model:, registry: nil, system: nil, attachment_store: nil)
+      def initialize(model:, registry: nil, system: nil, attachment_store: nil,
+                     provider_kind: "openai", capabilities: {},
+                     capability_mismatch_behavior: "metadata_fallback")
         @model    = model
         @registry = registry
         @system   = system
         @attachment_store = attachment_store
+        @provider_kind = provider_kind
+        @capabilities = capabilities || {}
+        @capability_mismatch_behavior = capability_mismatch_behavior
       end
 
       def call(log)
@@ -87,11 +93,32 @@ module Harnas
           when "text"
             { type: "text", text: block[:text].to_s }
           when "image"
+            fallback = fallback_if_unsupported(block)
+            next fallback if fallback
+
             { type: "image_url", image_url: { url: image_url(block) } }
+          when "document"
+            fallback = fallback_if_unsupported(block)
+            next fallback if fallback
+
+            raise ArgumentError, "OpenAI document content is not supported"
           else
             raise ArgumentError, "unsupported OpenAI content block type: #{block[:type]}"
           end
         end
+      end
+
+      def fallback_if_unsupported(block)
+        block_type = block[:type]
+        return nil if Capabilities.supported?(provider_kind: @provider_kind, model: @model,
+                                              overrides: @capabilities, block_type: block_type)
+
+        if Capabilities.mismatch_behavior(@capability_mismatch_behavior) == "error"
+          raise CapabilityMismatchError.new(provider_kind: @provider_kind, model: @model,
+                                            block_type: block_type)
+        end
+
+        Capabilities.fallback_block(block, @attachment_store)
       end
 
       def image_url(block)

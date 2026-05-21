@@ -436,7 +436,19 @@ module Harnas
       kwargs[:system]   = system   if params.include?(:system)   && system
       kwargs[:attachment_store] = attachment_store if params.include?(:attachment_store) &&
                                                       attachment_store
+      add_projection_capability_kwargs(kwargs, params, provider_spec)
       projection_klass.new(**kwargs)
+    end
+
+    def self.add_projection_capability_kwargs(kwargs, params, provider_spec)
+      kwargs[:provider_kind] = provider_spec["kind"] if params.include?(:provider_kind)
+      if params.include?(:capabilities)
+        kwargs[:capabilities] = provider_spec.fetch("capabilities", {})
+      end
+      return unless params.include?(:capability_mismatch_behavior)
+
+      kwargs[:capability_mismatch_behavior] =
+        provider_spec.fetch("capability_mismatch_behavior", "metadata_fallback")
     end
 
     def self.build_provider_instance(provider_klass, kind, info, api_keys, provider_spec)

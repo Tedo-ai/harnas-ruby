@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "harnas/hooks"
+require "harnas/capabilities"
 require "harnas/observation"
 require "harnas/events/provider_error"
 require "harnas/events/tool_result"
@@ -94,6 +95,10 @@ module Harnas
       return :runtime_failed if terminal_runtime_error?
 
       request = @projection.call(@session.log)
+    rescue CapabilityMismatchError => e
+      append_runtime_error(reason: "capability_mismatch", message: e.message)
+      :runtime_failed
+    else
       @session.hooks.invoke(:post_projection, session: @session, request: request)
 
       ok = call_provider_with_retry(request)
@@ -185,6 +190,29 @@ module Harnas
           terminal: terminal
         ).to_h
       )
+    end
+
+    def append_runtime_error(reason:, message:)
+      @session.log.append(
+        type: :runtime_error,
+        payload: {
+          source: "projection",
+          handler: projection_kind_for_error,
+          error_class: "CapabilityMismatchError",
+          message: message,
+          reason: reason,
+          terminal: true
+        }
+      )
+    end
+
+    def projection_kind_for_error
+      class_name = @projection.class.name.to_s
+      if    class_name.include?("Anthropic") then "anthropic"
+      elsif class_name.include?("OpenAI")    then "openai"
+      elsif class_name.include?("Gemini")    then "gemini"
+      else  "unknown"
+      end
     end
 
     def provider_kind_for_error

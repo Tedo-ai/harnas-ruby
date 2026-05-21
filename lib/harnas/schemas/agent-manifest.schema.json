@@ -46,6 +46,16 @@
           "type": "string",
           "minLength": 1,
           "description": "Optional provider base URL. Used by local or compatible providers such as Ollama."
+        },
+        "capabilities": {
+          "type": "object",
+          "additionalProperties": { "type": "boolean" },
+          "description": "Optional capability overrides for provider/model content support, such as user_message_images and user_message_documents."
+        },
+        "capability_mismatch_behavior": {
+          "type": "string",
+          "enum": ["metadata_fallback", "error"],
+          "description": "How projections handle content blocks unsupported by the selected provider/model. Defaults to metadata_fallback."
         }
       },
       "allOf": [
