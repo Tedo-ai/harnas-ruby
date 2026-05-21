@@ -230,6 +230,11 @@ Highlights:
 - Adopter helper APIs: `Harnas::Runtime` for create/resume/save assembly,
   `Harnas::Transcript.project` for UI-neutral Log views, and
   `Harnas::Tools::Snapshot` for dynamic tool metadata.
+- Cross-session delegation projections:
+  `Harnas::Projection.delegation_tree`,
+  `Harnas::Projection.descendant_timeline`,
+  `Harnas::Projection.open_children`, and
+  `Harnas::Projection.descendant_usage`.
 - Four canonical compaction strategies (MarkerTail, TokenMarkerTail,
   SummaryTail, ToolOutputCap).
 - Composable tool middleware (Timed, Logged, Retried, RateLimiter)
