@@ -67,8 +67,7 @@ module Harnas
         break if %w[exit quit].include?(input.downcase)
 
         streamed = false
-        payload = input_payload(input, options)
-        response = agent.stream_payload(payload) do |delta|
+        response = stream_agent(agent, input, options) do |delta|
           streamed = true if delta.type == :assistant_text_delta
           print_delta(delta)
         end
@@ -104,7 +103,7 @@ module Harnas
 
       agent = build_agent(options)
       started = Time.now
-      response = agent.chat_payload(input_payload(options[:input], options))
+      response = chat_agent(agent, options[:input], options)
       error = terminal_provider_error(agent)
       runtime_error = terminal_runtime_error(agent)
       save_session(agent)
@@ -199,6 +198,18 @@ module Harnas
       return { text: text } if options[:input_files].empty?
 
       { content: Harnas::InputFile.content_blocks(text, options[:input_files]) }
+    end
+
+    def chat_agent(agent, text, options)
+      return agent.chat(text) if options[:input_files].empty?
+
+      agent.chat_payload(input_payload(text, options))
+    end
+
+    def stream_agent(agent, text, options, &)
+      return agent.stream(text, &) if options[:input_files].empty?
+
+      agent.stream_payload(input_payload(text, options), &)
     end
 
     def build_agent(options)
