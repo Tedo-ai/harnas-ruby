@@ -67,4 +67,57 @@ RSpec.describe Harnas::Projection do
     expect(described_class.descendant_usage("ses_parent", runtime: runtime))
       .to eq("prompt_tokens" => 5, "completion_tokens" => 7, "total_tokens" => 12)
   end
+
+  it "rejects broken child links" do
+    broken = Harnas::Session.new(
+      id: "ses_child",
+      parent_session_id: "ses_other",
+      spawn_id: "spn_1"
+    )
+
+    expect do
+      described_class.delegation_tree(
+        "ses_parent",
+        runtime: { "ses_parent" => parent.first, "ses_child" => broken }
+      )
+    end.to raise_error(ArgumentError, /broken delegation link/)
+  end
+
+  it "rejects duplicate results for one spawn" do
+    duplicated = Harnas::Session.new(id: "ses_parent")
+    spawn = duplicated.log.append(
+      type: :agent_spawn,
+      payload: { spawn_id: "spn_1", child_session_id: "ses_child", task: "audit" }
+    )
+    duplicated.log.append(type: :agent_result,
+                          payload: { spawn_id: "spn_1", child_session_id: "ses_child" })
+    duplicated.log.append(type: :agent_result,
+                          payload: { spawn_id: "spn_1", child_session_id: "ses_child" })
+    linked_child = Harnas::Session.new(
+      id: "ses_child",
+      parent_session_id: "ses_parent",
+      spawn_id: "spn_1",
+      spawned_by_event_id: spawn.id
+    )
+
+    expect do
+      described_class.delegation_tree(
+        "ses_parent",
+        runtime: { "ses_parent" => duplicated, "ses_child" => linked_child }
+      )
+    end.to raise_error(ArgumentError, /multiple agent_result/)
+  end
+
+  it "rejects delegation cycles" do
+    a = Harnas::Session.new(id: "ses_a", parent_session_id: "ses_b", spawn_id: "spn_b")
+    b = Harnas::Session.new(id: "ses_b", parent_session_id: "ses_a", spawn_id: "spn_a")
+    a.log.append(type: :agent_spawn,
+                 payload: { spawn_id: "spn_a", child_session_id: "ses_b", task: "b" })
+    b.log.append(type: :agent_spawn,
+                 payload: { spawn_id: "spn_b", child_session_id: "ses_a", task: "a" })
+
+    expect do
+      described_class.delegation_tree("ses_a", runtime: { "ses_a" => a, "ses_b" => b })
+    end.to raise_error(ArgumentError, /delegation cycle/)
+  end
 end
