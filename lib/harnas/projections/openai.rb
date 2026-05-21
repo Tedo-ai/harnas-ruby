@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "harnas/content_blocks"
 require "harnas/log"
 require "harnas/mutations"
 require "harnas/observation"
@@ -23,10 +24,11 @@ module Harnas
     # An assistant turn that only emits tool_use (no text) becomes
     # `{ role: "assistant", content: null, tool_calls: [...] }`.
     class OpenAI
-      def initialize(model:, registry: nil, system: nil)
+      def initialize(model:, registry: nil, system: nil, attachment_store: nil)
         @model    = model
         @registry = registry
         @system   = system
+        @attachment_store = attachment_store
       end
 
       def call(log)
@@ -62,9 +64,9 @@ module Harnas
       def append_event(messages, evt)
         case evt.type
         when :user_message, :summary
-          messages << { role: "user", content: evt.payload[:text] }
+          messages << { role: "user", content: content(evt.payload) }
         when :assistant_message
-          messages << { role: "assistant", content: evt.payload[:text].to_s }
+          messages << { role: "assistant", content: content(evt.payload) }
         when :tool_use
           merge_tool_use(messages, evt)
         when :tool_result
@@ -74,6 +76,30 @@ module Harnas
             content: evt.payload[:error] || evt.payload[:output].to_s
           }
         end
+      end
+
+      def content(payload)
+        blocks = ContentBlocks.from_payload(payload)
+        return blocks.first[:text].to_s if blocks.size == 1 && blocks.first[:type] == "text"
+
+        blocks.map do |block|
+          case block[:type]
+          when "text"
+            { type: "text", text: block[:text].to_s }
+          when "image"
+            { type: "image_url", image_url: { url: image_url(block) } }
+          else
+            raise ArgumentError, "unsupported OpenAI content block type: #{block[:type]}"
+          end
+        end
+      end
+
+      def image_url(block)
+        source = ContentBlocks.symbolize(block[:source] || {})
+        return source[:url].to_s if source[:kind] == "url"
+
+        resolved = ContentBlocks.resolve_data(block, @attachment_store)
+        "data:#{resolved[:media_type]};base64,#{resolved[:data]}"
       end
 
       # Fold :tool_use events into the preceding assistant message's

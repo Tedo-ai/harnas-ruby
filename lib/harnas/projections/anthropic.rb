@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "harnas/log"
+require "harnas/content_blocks"
 require "harnas/mutations"
 require "harnas/observation"
 
@@ -20,11 +21,13 @@ module Harnas
     class Anthropic
       DEFAULT_MAX_TOKENS = 1024
 
-      def initialize(model:, max_tokens: DEFAULT_MAX_TOKENS, registry: nil, system: nil)
+      def initialize(model:, max_tokens: DEFAULT_MAX_TOKENS, registry: nil, system: nil,
+                     attachment_store: nil)
         @model      = model
         @max_tokens = max_tokens
         @registry   = registry
         @system     = system
+        @attachment_store = attachment_store
       end
 
       def call(log)
@@ -77,7 +80,7 @@ module Harnas
       def translate(evt)
         case evt.type
         when :user_message, :summary
-          ["user", { type: "text", text: evt.payload[:text] }]
+          ["user", content_blocks(evt.payload)]
         when :assistant_message
           translate_assistant_text(evt)
         when :tool_use
@@ -94,11 +97,44 @@ module Harnas
 
       def translate_assistant_text(evt)
         blocks = reasoning_blocks(evt)
-        text = evt.payload[:text].to_s
-        blocks << { type: "text", text: text } unless text.empty?
+        blocks.concat(content_blocks(evt.payload).reject do |block|
+          block[:type] == "text" && block[:text].to_s.empty?
+        end)
         return nil if blocks.empty?
 
         ["assistant", blocks]
+      end
+
+      def content_blocks(payload)
+        ContentBlocks.from_payload(payload).map do |block|
+          case block[:type]
+          when "text"
+            { type: "text", text: block[:text].to_s }
+          when "image"
+            media_block("image", block)
+          when "document"
+            media_block("document", block)
+          else
+            raise ArgumentError, "unsupported content block type: #{block[:type]}"
+          end
+        end
+      end
+
+      def media_block(kind, block)
+        source = ContentBlocks.symbolize(block[:source] || {})
+        if kind == "image" && source[:kind] == "url"
+          return { type: "image", source: { type: "url", url: source[:url].to_s } }
+        end
+
+        resolved = ContentBlocks.resolve_data(block, @attachment_store)
+        {
+          type: kind,
+          source: {
+            type: "base64",
+            media_type: resolved[:media_type],
+            data: resolved[:data]
+          }
+        }
       end
 
       def reasoning_blocks(evt)

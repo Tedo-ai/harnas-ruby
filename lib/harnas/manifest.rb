@@ -58,7 +58,7 @@ module Harnas
     #                    matching provider env var.
     # rubocop:disable Metrics/MethodLength
     def self.load(source, tool_handlers: {}, strategy_handlers: {}, hook_handlers: {},
-                  api_keys: {}, args_key_style: :symbol)
+                  api_keys: {}, args_key_style: :symbol, attachment_store: nil)
       manifest = validated_manifest(source)
       check_version!(manifest["harnas_version"])
       default_args_key_style = normalize_args_key_style(args_key_style)
@@ -72,7 +72,8 @@ module Harnas
         manifest["provider"],
         api_keys: api_keys,
         registry: registry,
-        system: manifest["system"]
+        system: manifest["system"],
+        attachment_store: attachment_store
       )
       strategies = build_strategies(
         manifest["strategies"],
@@ -391,7 +392,8 @@ module Harnas
             "manifest version #{version.inspect} not in supported #{SUPPORTED_VERSIONS.inspect}"
     end
 
-    def self.build_provider(provider_spec, api_keys:, registry:, system: nil)
+    def self.build_provider(provider_spec, api_keys:, registry:, system: nil,
+                            attachment_store: nil)
       kind = provider_spec["kind"]
       info = PROVIDER_KINDS[kind] or raise UnknownProviderError,
                                            "unknown provider kind: #{kind.inspect}"
@@ -406,7 +408,7 @@ module Harnas
 
       {
         projection: build_projection_instance(classes[:projection], provider_spec, registry,
-                                              system),
+                                              system, attachment_store),
         provider: build_provider_instance(classes[:provider], kind, info, api_keys,
                                           provider_spec),
         stream_provider: build_stream_provider_instance(classes[:stream_provider], kind, info,
@@ -424,13 +426,16 @@ module Harnas
       }
     end
 
-    def self.build_projection_instance(projection_klass, provider_spec, registry, system = nil)
+    def self.build_projection_instance(projection_klass, provider_spec, registry, system = nil,
+                                       attachment_store = nil)
       params = projection_klass.instance_method(:initialize).parameters.map { |(_, n)| n }
       kwargs = {}
       kwargs[:model]      = provider_spec["model"]      if params.include?(:model)
       kwargs[:max_tokens] = provider_spec["max_tokens"] if params.include?(:max_tokens)
       kwargs[:registry] = registry if params.include?(:registry) && registry
       kwargs[:system]   = system   if params.include?(:system)   && system
+      kwargs[:attachment_store] = attachment_store if params.include?(:attachment_store) &&
+                                                      attachment_store
       projection_klass.new(**kwargs)
     end
 

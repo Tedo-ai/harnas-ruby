@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "harnas/log"
+require "harnas/content_blocks"
 require "harnas/mutations"
 require "harnas/observation"
 
@@ -31,11 +32,13 @@ module Harnas
       # positive integer opts in. Even when Gemini does emit
       # thoughtSignatures, the Gemini ingestor + projection round-trip
       # them via :annotation events, so any setting is safe.
-      def initialize(model:, registry: nil, system: nil, thinking_budget: 0)
+      def initialize(model:, registry: nil, system: nil, thinking_budget: 0,
+                     attachment_store: nil)
         @model           = model
         @registry        = registry
         @system          = system
         @thinking_budget = thinking_budget
+        @attachment_store = attachment_store
       end
 
       def call(log)
@@ -85,7 +88,7 @@ module Harnas
       def append_event(contents, evt, next_evt = nil)
         case evt.type
         when :user_message, :summary
-          contents << { role: "user", parts: [{ text: evt.payload[:text] }] }
+          contents << { role: "user", parts: parts(evt.payload) }
         when :assistant_message
           append_assistant_text(contents, evt)
         when :tool_use
@@ -103,9 +106,25 @@ module Harnas
       end
 
       def append_assistant_text(contents, evt)
-        return if evt.payload[:text].to_s.empty?
+        rendered = parts(evt.payload)
+        return if rendered.empty?
 
-        contents << { role: "model", parts: [{ text: evt.payload[:text] }] }
+        contents << { role: "model", parts: rendered }
+      end
+
+      def parts(payload)
+        ContentBlocks.from_payload(payload).filter_map do |block|
+          case block[:type]
+          when "text"
+            text = block[:text].to_s
+            text.empty? ? nil : { text: text }
+          when "image", "document"
+            resolved = ContentBlocks.resolve_data(block, @attachment_store)
+            { inline_data: { mime_type: resolved[:media_type], data: resolved[:data] } }
+          else
+            raise ArgumentError, "unsupported Gemini content block type: #{block[:type]}"
+          end
+        end
       end
 
       # Tool calls merge into the trailing model entry if the previous
