@@ -17,6 +17,7 @@ RSpec.describe Harnas::Tools::Builtin do
         "harnas.builtin.grep",
         "harnas.builtin.run_shell",
         "harnas.builtin.fetch_url",
+        "harnas.builtin.spawn_agent",
         "harnas.builtin.load_skill",
         "harnas.builtin.bash_session"
       )

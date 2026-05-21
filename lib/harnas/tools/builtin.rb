@@ -51,6 +51,7 @@ module Harnas
           "harnas.builtin.grep" => method(:grep),
           "harnas.builtin.run_shell" => method(:run_shell),
           "harnas.builtin.fetch_url" => method(:fetch_url),
+          "harnas.builtin.spawn_agent" => method(:spawn_agent),
           "harnas.builtin.load_skill" => method(:load_skill),
           "harnas.builtin.bash_session" => bash_session_registry.method(:call)
         }
@@ -218,6 +219,22 @@ module Harnas
               }
             }
           }
+        },
+        {
+          name: "spawn_agent",
+          handler: "harnas.builtin.spawn_agent",
+          description: "Create a child agent Session receipt for a delegated task. " \
+                       "Products run and join the child according to their supervisor policy.",
+          input_schema: {
+            type: "object",
+            properties: {
+              task: { type: "string" },
+              label: { type: "string" },
+              role: { type: "string" },
+              tools_deny: { type: "array", items: { type: "string" } }
+            },
+            required: ["task"]
+          }
         }
       ].freeze
 
@@ -248,6 +265,10 @@ module Harnas
         content = require_arg(args, :content)
         File.write(path, content)
         "wrote #{content.bytesize} bytes to #{path}"
+      end
+
+      def self.spawn_agent(_args)
+        raise "spawn_agent is handled by Harnas::Tools::Runner"
       end
 
       def self.edit_file(args)

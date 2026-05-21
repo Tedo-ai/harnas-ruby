@@ -132,4 +132,36 @@ RSpec.describe Harnas::Tools::Runner do
       expect(result.payload[:error]).to match(/UnknownToolError/)
     end
   end
+
+  describe "spawn_agent" do
+    before do
+      registry.register(
+        Harnas::Tools::Tool.new(
+          name: "spawn_agent",
+          description: "",
+          input_schema: {},
+          handler: "harnas.builtin.spawn_agent"
+        ) { |_args| "unreachable" }
+      )
+    end
+
+    it "appends an agent_spawn receipt before the tool_result" do
+      tu = append_tool_use(
+        id: "toolu_spawn",
+        name: "spawn_agent",
+        arguments: { task: "Audit this", label: "Explorer", role: "explorer" }
+      )
+
+      runner.run(tu, into_log: log)
+
+      spawn = log.at(1)
+      result = log.at(2)
+      expect(spawn.type).to eq(:agent_spawn)
+      expect(spawn.payload[:task]).to eq("Audit this")
+      expect(spawn.payload[:spawned_by_event_id]).to eq(tu.id)
+      expect(result.type).to eq(:tool_result)
+      parsed = JSON.parse(result.payload[:output])
+      expect(parsed["spawn_id"]).to eq(spawn.payload[:spawn_id])
+    end
+  end
 end
