@@ -7,6 +7,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and Harnas adheres to [Semantic Versioning](https://semver.org/) on
 the specification as a whole.
 
+## [0.18.0] — 2026-05-21
+
+### Added
+
+- Lockstep spec release. Validated against fixtures version `0.18.0`.
+- Added subagent delegation event support, Session header delegation
+  metadata, capability manifest helpers, and cross-session projection
+  helpers.
+- Added support for projection conformance fixtures via
+  `expected-projections.jsonl`.
+- Added optional `harnas.builtin.spawn_agent`, which records an
+  `agent_spawn` receipt and returns generated child identifiers.
+- Conformance now passes 59/59 fixtures, including the five subagent
+  delegation fixtures.
+- Bumped gem metadata to 0.18.0.
+
 ## [0.17.0] — 2026-05-21
 
 ### Added
@@ -499,6 +515,7 @@ Carryovers and deferred decisions, captured for posterity:
   wrapping, which covers most cases — the lifecycle mixin would
   be motivated by a concrete use case we haven't found yet.
 
+[0.18.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.18.0
 [0.17.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.17.0
 [0.16.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.16.0
 [0.14.1]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.14.1
