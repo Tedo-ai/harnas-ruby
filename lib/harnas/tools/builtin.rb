@@ -63,11 +63,21 @@ module Harnas
         {
           name: "read_file",
           handler: "harnas.builtin.read_file",
-          description: "Read the contents of a file at the given path. " \
-                       "Returns the file body as text.",
+          description: "Read a text file with cat -n style line numbers. " \
+                       "Supports optional offset and limit.",
           input_schema: {
             type: "object",
-            properties: { path: { type: "string" } },
+            properties: {
+              path: { type: "string" },
+              offset: {
+                type: "integer",
+                description: "Start at line N (0-indexed). Default 0."
+              },
+              limit: {
+                type: "integer",
+                description: "Read at most N lines. Default 2000."
+              }
+            },
             required: ["path"]
           }
         },
@@ -195,7 +205,11 @@ module Harnas
               session_id: { type: "string" },
               command: { type: "string" },
               action: { type: "string", enum: %w[run status kill] },
-              timeout_ms: { type: "integer", minimum: 1 }
+              timeout_ms: { type: "integer", minimum: 1 },
+              env: {
+                type: "object",
+                additionalProperties: { type: "string" }
+              }
             }
           }
         }
@@ -209,7 +223,18 @@ module Harnas
 
       def self.read_file(args)
         path = require_arg(args, :path)
-        File.read(path)
+        data = File.binread(path)
+        first_chunk = data.byteslice(0, 8192).to_s
+        if first_chunk.include?("\0")
+          raise ArgumentError, "Cannot read binary file '#{path}'. " \
+                               "Use bash_session to inspect binary files."
+        end
+
+        offset = [fetch_optional_int(args, :offset), 0].max
+        limit = fetch_optional_int(args, :limit)
+        limit = 2000 unless limit.positive?
+        limit = [limit, 10_000].min
+        format_numbered_file(data, offset, limit)
       end
 
       def self.write_file(args)
@@ -316,6 +341,7 @@ module Harnas
 
       DEFAULT_BASH_SESSION_MAX_OUTPUT_BYTES = 64 * 1024
       ANSI_PATTERN = /\e\[[0-9;]*[mGKHF]|\r/
+      ENV_NAME_PATTERN = /\A[A-Za-z_][A-Za-z0-9_]*\z/
 
       def self.bash_session_registry
         @bash_session_registry ||= BashSessionRegistry.new
@@ -335,22 +361,7 @@ module Harnas
           action = "status" if action.to_s.empty?
           session_id = fetch_optional(args, :session_id)
 
-          result =
-            case action
-            when "run"
-              raise ArgumentError, "missing required argument: command" if command.to_s.empty?
-
-              session(session_id, config, create: true).run(
-                command,
-                timeout_ms(fetch_optional(args, :timeout_ms))
-              )
-            when "status"
-              session(session_id, config, create: false).status
-            when "kill"
-              session(session_id, config, create: false).kill
-            else
-              raise ArgumentError, "unknown bash_session action: #{action}"
-            end
+          result = dispatch(action, session_id, command, args, config)
           JSON.generate(result)
         end
 
@@ -383,8 +394,49 @@ module Harnas
         def timeout_ms(value)
           value.to_i.positive? ? value.to_i / 1000.0 : nil
         end
+
+        def dispatch(action, session_id, command, args, config)
+          case action
+          when "run"
+            run_action(session_id, command, args, config)
+          when "status"
+            session(session_id, config, create: false).status
+          when "kill"
+            session(session_id, config, create: false).kill
+          else
+            raise ArgumentError, "unknown bash_session action: #{action}"
+          end
+        end
+
+        def run_action(session_id, command, args, config)
+          raise ArgumentError, "missing required argument: command" if command.to_s.empty?
+
+          session(session_id, config, create: true).run(
+            command,
+            command_env(fetch_optional(args, :env)),
+            timeout_ms(fetch_optional(args, :timeout_ms))
+          )
+        end
+
+        def command_env(value)
+          return {} unless value
+          raise ArgumentError, "bash_session env must be an object" unless value.is_a?(Hash)
+
+          value.each_with_object({}) do |(key, item), out|
+            key = key.to_s
+            unless ENV_NAME_PATTERN.match?(key)
+              raise ArgumentError, "invalid bash_session env key: #{key}"
+            end
+            unless item.is_a?(String)
+              raise ArgumentError, "bash_session env value for #{key} must be a string"
+            end
+
+            out[key] = item
+          end
+        end
       end
 
+      # rubocop:disable Metrics/ClassLength
       class BashSession
         def initialize(id, config)
           @id = id
@@ -397,8 +449,8 @@ module Harnas
           start_shell(config)
         end
 
-        def run(command, timeout)
-          current = start_command(command)
+        def run(command, env, timeout)
+          current = start_command(command, env)
           return snapshot("killed", nil, nil) unless current
           return snapshot("killed", nil, current) if current[:write_failed]
 
@@ -448,8 +500,9 @@ module Harnas
         end
 
         def start_shell(config)
+          @shell = resolve_shell(config)
           @stdin, stdout, stderr, @wait_thread = Open3.popen3(
-            resolve_shell(config),
+            @shell,
             chdir: resolve_cwd(config),
             pgroup: true
           )
@@ -470,14 +523,14 @@ module Harnas
           File.expand_path(cwd.empty? ? "." : cwd)
         end
 
-        def start_command(command)
+        def start_command(command, env)
           @mutex.synchronize do
             @condition.wait(@mutex) while @current
             return nil if @closed
 
             current = new_command
             @current = current
-            @stdin.write(framed_command(command, current[:token]))
+            @stdin.write(framed_command(command_with_env(command, env), current[:token]))
             current
           rescue IOError, Errno::EPIPE
             @current = nil
@@ -504,6 +557,19 @@ module Harnas
           "\n{ #{command}\n} </dev/null; __harnas_status=$?; " \
             "printf '__HARNAS_ERR_DONE_#{token}\\n' >&2; " \
             "printf '__HARNAS_DONE_#{token}:%s\\n' \"$__harnas_status\"\n"
+        end
+
+        def command_with_env(command, env)
+          return command if env.empty?
+
+          assignments = env.keys.sort.map do |key|
+            "#{key}=#{shell_quote(env.fetch(key))}"
+          end
+          (["env"] + assignments + [shell_quote(@shell), "-c", shell_quote(command)]).join(" ")
+        end
+
+        def shell_quote(value)
+          "'#{value.gsub("'", "'\"'\"'")}'"
         end
 
         def wait_for_command(current, timeout)
@@ -614,6 +680,7 @@ module Harnas
           value.gsub(ANSI_PATTERN, "")
         end
       end
+      # rubocop:enable Metrics/ClassLength
 
       class RingBuffer
         attr_reader :max
@@ -679,6 +746,39 @@ module Harnas
         value
       end
       private_class_method :fetch_arg
+
+      def self.fetch_optional_int(args, key)
+        value = args.key?(key) ? args[key] : args[key.to_s]
+        value.to_i
+      end
+      private_class_method :fetch_optional_int
+
+      def self.format_numbered_file(data, offset, limit)
+        return "... [file has 0 total lines; showing 0–0]\n" if data.empty?
+
+        text = data.force_encoding(Encoding::UTF_8)
+        lines = text.split("\n", -1)
+        lines.pop if text.end_with?("\n")
+        total = lines.length
+        if offset >= total
+          return "... [file has #{total} total lines; offset #{offset} is past EOF]\n"
+        end
+
+        finish = [offset + limit, total].min
+        out = +""
+        lines[offset...finish].each_with_index do |line, index|
+          out << format(
+            "%<line_no>6d\t%<line>s\n",
+            line_no: offset + index + 1,
+            line: line
+          )
+        end
+        if total > offset + limit
+          out << "... [file has #{total} total lines; showing #{offset}–#{offset + limit}]\n"
+        end
+        out
+      end
+      private_class_method :format_numbered_file
 
       def self.build_grep_regex(pattern, args)
         flags = args[:case_insensitive] || args["case_insensitive"] ? Regexp::IGNORECASE : 0

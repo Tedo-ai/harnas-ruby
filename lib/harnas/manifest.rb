@@ -299,6 +299,8 @@ module Harnas
         "harnas/strategies/permission/human_approval",
       "sandbox/write" =>
         "harnas/strategies/sandbox/write",
+      "sandbox/network" =>
+        "harnas/strategies/sandbox/network",
       "guard/repetition" =>
         "harnas/strategies/guard/repetition",
       "guard/timeout" =>
@@ -326,6 +328,8 @@ module Harnas
         "Harnas::Strategies::Permission::HumanApproval",
       "sandbox/write" =>
         "Harnas::Strategies::Sandbox::Write",
+      "sandbox/network" =>
+        "Harnas::Strategies::Sandbox::Network",
       "guard/repetition" =>
         "Harnas::Strategies::Guard::Repetition",
       "guard/timeout" =>

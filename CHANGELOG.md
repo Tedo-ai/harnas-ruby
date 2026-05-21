@@ -7,6 +7,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and Harnas adheres to [Semantic Versioning](https://semver.org/) on
 the specification as a whole.
 
+## [0.14.0] — 2026-05-21
+
+### Added
+
+- Added `sandbox/network`, a tool-boundary network strategy with exact host
+  allow/deny enforcement for `fetch_url`.
+- Extended `harnas.builtin.bash_session` so `run` accepts an optional
+  per-command `env` object whose variables do not persist in the shell
+  session.
+
+### Changed
+
+- Updated `harnas.builtin.read_file` to accept `offset` and `limit`, return
+  `cat -n` style line-numbered output, and reject binary files.
+- Conformance now passes 45/45 fixtures.
+
 ## [0.13.2] — 2026-05-20
 
 ### Added
@@ -434,6 +450,7 @@ Carryovers and deferred decisions, captured for posterity:
   wrapping, which covers most cases — the lifecycle mixin would
   be motivated by a concrete use case we haven't found yet.
 
+[0.14.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.14.0
 [0.13.2]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.13.2
 [0.13.1]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.13.1
 [0.13.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.13.0

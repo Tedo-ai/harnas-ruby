@@ -61,13 +61,13 @@ module Harnas
         end
 
         # Wrap a read_file handler. After a successful read, appends an
-        # :annotation Event carrying sha256 of the returned content.
+        # :annotation Event carrying sha256 of the file content on disk.
         def wrap_read(handler)
           outer = self
           lambda do |args|
             result = handler.call(args)
             path = args[:path] || args["path"]
-            outer.send(:record_hash, path, outer.send(:hash_of, result.to_s)) if path
+            outer.send(:refresh_from_disk, path) if path && File.exist?(path)
             result
           end
         end
@@ -118,7 +118,7 @@ module Harnas
         end
 
         def refresh_from_disk(path)
-          record_hash(path, hash_of(File.read(path)))
+          record_hash(path, hash_of(File.binread(path)))
         rescue StandardError
           # If the file is unreadable after the mutation, skip recording.
           nil
@@ -140,7 +140,7 @@ module Harnas
             return
           end
 
-          current = File.exist?(path) ? hash_of(File.read(path)) : nil
+          current = File.exist?(path) ? hash_of(File.binread(path)) : nil
           return if current == previous
 
           fire(path, action: action, previous: previous, current: current, reason: :drifted)

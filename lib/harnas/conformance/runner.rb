@@ -294,6 +294,8 @@ module Harnas
           ->(args) { "[conformance stub: #{name}(#{canonical_json(args)})]" }
         end
         handlers["harnas.builtin.load_skill"] = Harnas::Tools::Builtin.method(:load_skill)
+        handlers["harnas.builtin.read_file"] =
+          Harnas::Tools::Builtin.handlers.fetch("harnas.builtin.read_file")
         handlers["harnas.builtin.write_file"] =
           Harnas::Tools::Builtin.handlers.fetch("harnas.builtin.write_file")
         handlers["harnas.builtin.edit_file"] =

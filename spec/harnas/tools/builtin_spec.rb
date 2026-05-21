@@ -45,11 +45,32 @@ RSpec.describe Harnas::Tools::Builtin do
   end
 
   describe "read_file" do
-    it "returns the file contents" do
+    it "returns cat -n style line-numbered file contents" do
       Tempfile.create(["harnas-builtin", ".txt"]) do |f|
-        f.write("hello")
+        f.write("hello\nworld\n")
         f.flush
-        expect(described_class.read_file(path: f.path)).to eq("hello")
+        expect(described_class.read_file(path: f.path)).to eq("     1\thello\n     2\tworld\n")
+      end
+    end
+
+    it "supports offset, limit, and EOF indicators" do
+      Tempfile.create(["harnas-builtin", ".txt"]) do |f|
+        f.write("one\ntwo\nthree\n")
+        f.flush
+        expect(described_class.read_file(path: f.path, offset: 1, limit: 1))
+          .to eq("     2\ttwo\n... [file has 3 total lines; showing 1–2]\n")
+        expect(described_class.read_file(path: f.path, offset: 10))
+          .to eq("... [file has 3 total lines; offset 10 is past EOF]\n")
+      end
+    end
+
+    it "rejects binary files" do
+      Tempfile.create(["harnas-builtin", ".bin"]) do |f|
+        f.binmode
+        f.write("abc\0def")
+        f.flush
+        expect { described_class.read_file(path: f.path) }
+          .to raise_error(ArgumentError, /Cannot read binary file/)
       end
     end
 
@@ -358,6 +379,36 @@ RSpec.describe Harnas::Tools::Builtin do
         expect(second.fetch("command_stdout")).to eq("")
         expect(second.fetch("stderr")).to eq("second")
         expect(second.fetch("command_stderr")).to eq("second")
+      end
+    ensure
+      registry&.close
+    end
+
+    it "supports per-command env without persisting it" do
+      registry = described_class::BashSessionRegistry.new
+      Dir.mktmpdir do |dir|
+        first = parse_bash_result(
+          registry.call(
+            { session_id: "s1", command: "echo $MYVAR", env: { MYVAR: "hello $USER" } },
+            config: { cwd: dir, max_output_bytes: 4096 }
+          )
+        )
+        expect(first.fetch("command_stdout")).to eq("hello $USER\n")
+
+        second = parse_bash_result(
+          registry.call(
+            { session_id: "s1", command: "echo $MYVAR" },
+            config: { cwd: dir, max_output_bytes: 4096 }
+          )
+        )
+        expect(second.fetch("command_stdout")).to eq("\n")
+
+        expect do
+          registry.call(
+            { session_id: "s1", command: "true", env: { "BAD KEY" => "value" } },
+            config: { cwd: dir }
+          )
+        end.to raise_error(ArgumentError, /invalid bash_session env key/)
       end
     ensure
       registry&.close
