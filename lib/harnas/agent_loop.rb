@@ -13,7 +13,7 @@ module Harnas
   #
   # Terminates when the assistant's stop_reason is not :tool_use, when
   # there are no pending :tool_use Events, or when max_turns is reached.
-  class AgentLoop
+  class AgentLoop # rubocop:disable Metrics/ClassLength
     DEFAULT_MAX_TURNS = 10
     STREAM_DELTA_TYPES = %i[
       assistant_text_delta
@@ -215,7 +215,8 @@ module Harnas
       if denied
         append_denial(tool_use_event, denied[:reason])
       else
-        @runner&.run(tool_use_event, into_log: @session.log)
+        @runner&.run(tool_use_with_argument_overrides(tool_use_event, decisions),
+                     into_log: @session.log)
       end
 
       @session.hooks.invoke(
@@ -224,6 +225,20 @@ module Harnas
         tool_use: tool_use_event,
         tool_result: matching_tool_result(tool_use_event),
         denied: !denied.nil?
+      )
+    end
+
+    def tool_use_with_argument_overrides(tool_use_event, decisions)
+      override = decisions.find do |decision|
+        decision.is_a?(Hash) && decision[:arguments].is_a?(Hash)
+      end
+      return tool_use_event unless override
+
+      Event.new(
+        seq: tool_use_event.seq,
+        id: tool_use_event.id,
+        type: tool_use_event.type,
+        payload: tool_use_event.payload.merge(arguments: override[:arguments])
       )
     end
 

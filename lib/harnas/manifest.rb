@@ -301,6 +301,8 @@ module Harnas
         "harnas/strategies/sandbox/write",
       "sandbox/network" =>
         "harnas/strategies/sandbox/network",
+      "credential/proxy" =>
+        "harnas/strategies/credential/proxy",
       "guard/repetition" =>
         "harnas/strategies/guard/repetition",
       "guard/timeout" =>
@@ -330,6 +332,8 @@ module Harnas
         "Harnas::Strategies::Sandbox::Write",
       "sandbox/network" =>
         "Harnas::Strategies::Sandbox::Network",
+      "credential/proxy" =>
+        "Harnas::Strategies::Credential::Proxy",
       "guard/repetition" =>
         "Harnas::Strategies::Guard::Repetition",
       "guard/timeout" =>

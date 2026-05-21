@@ -178,7 +178,13 @@ module Harnas
                        "body as text.",
           input_schema: {
             type: "object",
-            properties: { url: { type: "string" } },
+            properties: {
+              url: { type: "string" },
+              headers: {
+                type: "object",
+                additionalProperties: { type: "string" }
+              }
+            },
             required: ["url"]
           }
         },
@@ -315,10 +321,21 @@ module Harnas
         raise ArgumentError, "only http(s) is supported" \
           unless %w[http https].include?(uri.scheme)
 
-        response = Net::HTTP.get_response(uri)
+        request = Net::HTTP::Get.new(uri)
+        fetch_headers(args).each { |key, value| request[key] = value }
+        response = Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https") do |http|
+          http.request(request)
+        end
         body = response.body.to_s
         body = body.byteslice(0, MAX_FETCH_BYTES) if body.bytesize > MAX_FETCH_BYTES
         "HTTP #{response.code}\n#{body}"
+      end
+
+      def self.fetch_headers(args)
+        headers = args[:headers] || args["headers"] || {}
+        raise ArgumentError, "headers must be an object" unless headers.is_a?(Hash)
+
+        headers.each_with_object({}) { |(key, value), out| out[key.to_s] = value.to_s }
       end
 
       def self.load_skill(args, config: {})

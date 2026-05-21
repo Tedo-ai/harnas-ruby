@@ -84,6 +84,7 @@ module Harnas
             load_expected(expected_strategy_events_path)
           )
         end
+        diff ||= credential_proxy_secret_diff(actual, dir)
         Result.new(
           fixture: File.basename(dir),
           passed: diff.nil?,
@@ -305,6 +306,11 @@ module Harnas
 
           ->(args) { "[conformance stub: #{name}(#{canonical_json(args)})]" }
         end
+        register_conformance_builtins(handlers)
+        handlers
+      end
+
+      def self.register_conformance_builtins(handlers)
         handlers["harnas.builtin.load_skill"] = Harnas::Tools::Builtin.method(:load_skill)
         handlers["harnas.builtin.read_file"] =
           Harnas::Tools::Builtin.handlers.fetch("harnas.builtin.read_file")
@@ -314,7 +320,22 @@ module Harnas
           Harnas::Tools::Builtin.handlers.fetch("harnas.builtin.edit_file")
         handlers["harnas.builtin.bash_session"] =
           Harnas::Tools::Builtin.handlers.fetch("harnas.builtin.bash_session")
-        handlers
+        handlers["harnas.builtin.fetch_url"] = fixture_fetch_url_handler
+      end
+
+      def self.fixture_fetch_url_handler
+        lambda do |args|
+          if args[:url] == "https://api.example.com/data"
+            headers = args[:headers] || {}
+            unless headers["Authorization"] == "Bearer SECRET-DO-NOT-LOG"
+              raise "fetch_url missing credential proxy Authorization header"
+            end
+
+            next "fetched OK"
+          end
+
+          "[conformance stub: harnas.builtin.fetch_url(#{canonical_json(args)})]"
+        end
       end
 
       def self.resolve_fixture_paths(manifest, fixture_dir)
@@ -420,6 +441,19 @@ module Harnas
           }
         end
         nil
+      end
+
+      def self.credential_proxy_secret_diff(actual, dir)
+        return nil unless File.basename(dir) == "with-credential-proxy-injection"
+
+        serialized = actual.map { |event| JSON.generate(event) }.join("\n")
+        return nil unless serialized.include?("SECRET-DO-NOT-LOG")
+
+        {
+          at_seq: "redaction",
+          actual: "serialized log contains SECRET-DO-NOT-LOG",
+          expected: "serialized log must not contain SECRET-DO-NOT-LOG"
+        }
       end
 
       class StrategyEventCollector

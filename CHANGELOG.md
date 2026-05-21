@@ -7,6 +7,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and Harnas adheres to [Semantic Versioning](https://semver.org/) on
 the specification as a whole.
 
+## [0.16.0] — 2026-05-21
+
+### Added
+
+- Added `credential/proxy`, a `:pre_tool_use` strategy that injects
+  credential-backed headers into supported tool arguments while keeping
+  credential values out of the Log and Observation stream.
+- `fetch_url` now accepts optional request headers so credential/proxy can
+  authorize HTTP calls without exposing secrets to the model.
+
+### Changed
+
+- Lockstep spec release. Validated against fixtures version `0.16.0`.
+- Conformance now passes 46/46 fixtures, including
+  `with-credential-proxy-injection`.
+
 ## [0.14.1] — 2026-05-21
 
 ### Added
@@ -463,6 +479,7 @@ Carryovers and deferred decisions, captured for posterity:
   wrapping, which covers most cases — the lifecycle mixin would
   be motivated by a concrete use case we haven't found yet.
 
+[0.16.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.16.0
 [0.14.1]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.14.1
 [0.14.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.14.0
 [0.13.2]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.13.2
