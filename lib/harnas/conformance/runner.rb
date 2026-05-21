@@ -10,6 +10,7 @@ require "harnas/events/user_message"
 require "harnas/attachments"
 require "harnas/hooks"
 require "harnas/tools/builtin"
+require "harnas/projection"
 require "harnas/conformance/scripted_provider"
 require "harnas/conformance/scripted_stream_provider"
 
@@ -59,6 +60,9 @@ module Harnas
       # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
       def self.run(dir)
         dir = File.expand_path(dir)
+        projection_path = File.join(dir, "expected-projections.jsonl")
+        return run_projection_fixture(dir) if File.exist?(projection_path)
+
         manifest = JSON.parse(File.read(File.join(dir, "manifest.json")))
         manifest.delete("fixture_version_added")
         manifest = resolve_fixture_paths(manifest, dir)
@@ -97,6 +101,71 @@ module Harnas
         )
       end
       # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
+
+      def self.run_projection_fixture(dir)
+        sessions, root = load_fixture_sessions(File.join(dir, "sessions"))
+        expected = load_expected(File.join(dir, "expected-log.jsonl"))
+        actual = serialize_log(root.log)
+        diff = first_mismatch(actual, expected)
+        diff ||= first_projection_mismatch(
+          load_expected(File.join(dir, "expected-projections.jsonl")),
+          sessions
+        )
+        Result.new(
+          fixture: File.basename(dir),
+          passed: diff.nil?,
+          diff: diff,
+          actual: actual,
+          expected: expected
+        )
+      end
+
+      def self.load_fixture_sessions(dir)
+        sessions = {}
+        root = nil
+        Dir.children(dir).grep(/\.jsonl\z/).sort.each do |name|
+          session = Harnas::Session.load(File.join(dir, name))
+          sessions[session.id] = session
+          next unless session.parent_session_id.nil?
+
+          raise ArgumentError, "multiple root sessions in #{dir}" if root
+
+          root = session
+        end
+        raise ArgumentError, "no root session in #{dir}" unless root
+
+        [sessions, root]
+      end
+
+      def self.first_projection_mismatch(rows, sessions)
+        rows.each_with_index do |row, index|
+          actual = evaluate_projection(row.fetch("projection"), row.fetch("input"), sessions)
+          expected = row.fetch("output")
+          next if normalize(actual) == normalize(expected)
+
+          return {
+            at_seq: "projection #{index}",
+            actual: actual,
+            expected: expected
+          }
+        end
+        nil
+      end
+
+      def self.evaluate_projection(name, input, sessions)
+        case name
+        when "delegation_tree"
+          Harnas::Projection.delegation_tree(input, runtime: sessions)
+        when "open_children"
+          Harnas::Projection.open_children(input, runtime: sessions)
+        when "descendant_timeline"
+          Harnas::Projection.descendant_timeline(input, runtime: sessions)
+        when "descendant_usage"
+          Harnas::Projection.descendant_usage(input, runtime: sessions)
+        else
+          raise ArgumentError, "unknown projection #{name.inspect}"
+        end
+      end
 
       def self.fixture_version(spec_root)
         path = File.join(spec_root, "VERSION")
