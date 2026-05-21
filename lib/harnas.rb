@@ -3,6 +3,7 @@
 require "harnas/agent"
 require "harnas/agent_loop"
 require "harnas/attachments"
+require "harnas/capability_manifest"
 require "harnas/config"
 require "harnas/event"
 require "harnas/hooks"
