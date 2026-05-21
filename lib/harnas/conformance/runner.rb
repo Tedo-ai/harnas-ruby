@@ -7,6 +7,7 @@ require "harnas/manifest"
 require "harnas/tools/runner"
 require "harnas/agent_loop"
 require "harnas/events/user_message"
+require "harnas/attachments"
 require "harnas/hooks"
 require "harnas/tools/builtin"
 require "harnas/conformance/scripted_provider"
@@ -57,6 +58,7 @@ module Harnas
 
       # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
       def self.run(dir)
+        dir = File.expand_path(dir)
         manifest = JSON.parse(File.read(File.join(dir, "manifest.json")))
         manifest.delete("fixture_version_added")
         manifest = resolve_fixture_paths(manifest, dir)
@@ -69,6 +71,7 @@ module Harnas
         actual, actual_deltas, actual_strategy_events = Dir.chdir(dir) do
           run_agent_with_sidecars(
             manifest, script, inputs, streaming: streaming,
+                                      attachment_store: load_attachment_store("."),
                                       expected_deltas_path: expected_deltas_path,
                                       expected_strategy_events_path: expected_strategy_events_path
           )
@@ -106,18 +109,28 @@ module Harnas
         nil
       end
 
-      def self.run_agent(manifest, script, inputs, streaming: false)
-        serialize_log(run_session(manifest, script, inputs, streaming: streaming).log)
+      def self.run_agent(manifest, script, inputs, streaming: false, attachment_store: nil)
+        serialize_log(
+          run_session(manifest, script, inputs, streaming: streaming,
+                                                attachment_store: attachment_store).log
+        )
       end
 
-      def self.run_agent_with_sidecars(manifest, script, inputs, streaming: false,
+      def self.run_agent_with_sidecars(manifest, script, inputs, streaming: false, # rubocop:disable Metrics/MethodLength
                                        expected_deltas_path: nil,
+                                       attachment_store: nil,
                                        expected_strategy_events_path: nil)
         needs_deltas = expected_deltas_path && File.exist?(expected_deltas_path)
         needs_strategy_events = expected_strategy_events_path &&
                                 File.exist?(expected_strategy_events_path)
-        return [run_agent(manifest, script, inputs, streaming: streaming), [], []] \
-          unless needs_deltas || needs_strategy_events
+        unless needs_deltas || needs_strategy_events
+          return [
+            run_agent(manifest, script, inputs, streaming: streaming,
+                                                attachment_store: attachment_store),
+            [],
+            []
+          ]
+        end
 
         Dir.mktmpdir("harnas-sidecars") do |dir|
           delta_path = File.join(dir, "session.deltas.jsonl")
@@ -128,6 +141,7 @@ module Harnas
             inputs,
             streaming: streaming,
             delta_path: (delta_path if needs_deltas),
+            attachment_store: attachment_store,
             strategy_events_path: (strategy_events_path if needs_strategy_events)
           )
           [
@@ -139,8 +153,8 @@ module Harnas
       end
 
       # rubocop:disable Metrics/MethodLength
-      def self.run_session(manifest, script, inputs, streaming: false, session: nil,
-                           delta_path: nil, strategy_events_path: nil)
+      def self.run_session(manifest, script, inputs, streaming: false, session: nil, # rubocop:disable Metrics/ParameterLists
+                           delta_path: nil, strategy_events_path: nil, attachment_store: nil)
         scripted = if streaming
                      ScriptedStreamProvider.new(streams: script)
                    else
@@ -151,7 +165,8 @@ module Harnas
           api_keys: conformance_api_keys,
           tool_handlers: conformance_tool_handlers,
           strategy_handlers: conformance_strategy_handlers,
-          hook_handlers: conformance_hook_handlers
+          hook_handlers: conformance_hook_handlers,
+          attachment_store: attachment_store || load_attachment_store(".")
         )
         loaded = loaded.with_session(session) if session
         if delta_path
@@ -249,11 +264,30 @@ module Harnas
       end
 
       def self.append_user_message(loaded, input)
+        if input.is_a?(Hash) && input.key?("content")
+          loaded.session.log.append(
+            type: :user_message,
+            payload: { content: input.fetch("content") }
+          )
+          return
+        end
         text = input.is_a?(Hash) ? input.fetch("user") : input
         loaded.session.log.append(
           type: :user_message,
           payload: Harnas::Events::UserMessage.new(text: text).to_h
         )
+      end
+
+      def self.load_attachment_store(dir)
+        store = Harnas::Attachments::MemoryStore.new
+        path = File.join(dir, "attachments.json")
+        return store unless File.exist?(path)
+
+        JSON.parse(File.read(path)).each do |spec|
+          store.put(File.binread(File.join(dir, spec.fetch("path"))),
+                    spec.fetch("media_type"))
+        end
+        store
       end
 
       def self.run_loop(loaded, scripted, streaming: false)
