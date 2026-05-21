@@ -10,6 +10,7 @@ require "harnas/cli/inspector"
 require "harnas/cli/session_commands"
 require "harnas/cli/usage"
 require "harnas/config"
+require "harnas/input_file"
 require "harnas/session"
 require "harnas/tools/builtin"
 
@@ -66,7 +67,8 @@ module Harnas
         break if %w[exit quit].include?(input.downcase)
 
         streamed = false
-        response = agent.stream(input) do |delta|
+        payload = input_payload(input, options)
+        response = agent.stream_payload(payload) do |delta|
           streamed = true if delta.type == :assistant_text_delta
           print_delta(delta)
         end
@@ -102,7 +104,7 @@ module Harnas
 
       agent = build_agent(options)
       started = Time.now
-      response = agent.chat(options[:input])
+      response = agent.chat_payload(input_payload(options[:input], options))
       error = terminal_provider_error(agent)
       runtime_error = terminal_runtime_error(agent)
       save_session(agent)
@@ -138,6 +140,7 @@ module Harnas
       options = default_options
       parser = OptionParser.new do |opts|
         opts.banner = "usage: harnas chat <manifest> [--provider KIND] [--model MODEL]"
+        input_file_option(opts, options)
         provider_model_options(opts, options)
         opts.on("-h", "--help") { print_help(opts) }
       end
@@ -161,6 +164,7 @@ module Harnas
       parser = OptionParser.new do |opts|
         opts.banner = "usage: harnas run <manifest> --input TEXT [--provider KIND] [--model MODEL]"
         opts.on("--input TEXT", "User input to send as one turn") { |v| options[:input] = v }
+        input_file_option(opts, options)
         opts.on("--output-format FORMAT", "text (default) or ndjson") do |v|
           options[:output_format] = v
         end
@@ -176,12 +180,26 @@ module Harnas
       opts.on("--model MODEL", "Override manifest provider model") { |v| options[:model] = v }
     end
 
+    def input_file_option(opts, options)
+      opts.on("--input-file PATH", "Attach an image or PDF file to the user message") do |v|
+        options[:input_files] << v
+      end
+    end
+
     def print_help(opts)
       @stdout.puts opts
       exit EXIT_SUCCESS
     end
 
-    def default_options = { provider: nil, model: nil, input: nil, output_format: "text" }
+    def default_options
+      { provider: nil, model: nil, input: nil, input_files: [], output_format: "text" }
+    end
+
+    def input_payload(text, options)
+      return { text: text } if options[:input_files].empty?
+
+      { content: Harnas::InputFile.content_blocks(text, options[:input_files]) }
+    end
 
     def build_agent(options)
       manifest = load_manifest(options)

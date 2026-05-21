@@ -31,4 +31,27 @@ RSpec.describe Harnas::Transcript do
 
     expect(described_class.project(log, include_tools: false)).to eq([])
   end
+
+  it "renders multimodal content blocks with placeholders" do
+    log = Harnas::Log.new
+    log.append(type: :user_message,
+               payload: { content: [
+                 { type: "text", text: "see this" },
+                 { type: "image", media_type: "image/png", name: "chart.png",
+                   source: { kind: "base64", data: "aW1n" } }
+               ] })
+
+    expect(described_class.project(log).first[:text])
+      .to eq("see this\n[image: chart.png: image/png: 3 bytes]")
+  end
+
+  it "accepts a custom content placeholder renderer" do
+    log = Harnas::Log.new
+    log.append(type: :user_message,
+               payload: { content: [{ type: "document", media_type: "application/pdf" }] })
+
+    items = described_class.project(log, content_placeholder: ->(_block) { "[attachment]" })
+
+    expect(items.first[:text]).to eq("[attachment]")
+  end
 end

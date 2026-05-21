@@ -28,9 +28,10 @@ module Harnas
 
     attr_reader :name
 
-    def self.from_manifest(source, api_keys: {}, tool_handlers: {},
+    def self.from_manifest(source, api_keys: {}, tool_handlers: {}, # rubocop:disable Metrics/ParameterLists
                            strategy_handlers: {}, hook_handlers: {},
-                           max_turns: AgentLoop::DEFAULT_MAX_TURNS, system: nil)
+                           max_turns: AgentLoop::DEFAULT_MAX_TURNS, system: nil,
+                           attachment_store: nil)
       source = override_system(source, system) unless system.nil?
 
       loaded = Manifest.load(
@@ -38,7 +39,8 @@ module Harnas
         api_keys: api_keys,
         tool_handlers: tool_handlers,
         strategy_handlers: strategy_handlers,
-        hook_handlers: hook_handlers
+        hook_handlers: hook_handlers,
+        attachment_store: attachment_store
       )
       new(loaded: loaded, max_turns: max_turns)
     end
@@ -67,8 +69,12 @@ module Harnas
     # finishes (stop_reason != :tool_use or no pending tool calls). Returns
     # a Response value derived from the final :assistant_message.
     def chat(text)
+      chat_payload(Events::UserMessage.new(text: text).to_h)
+    end
+
+    def chat_payload(payload)
       ensure_strategies_installed!
-      append_user_message(text)
+      append_user_payload(payload)
 
       AgentLoop.new(
         session: @loaded.session,
@@ -85,11 +91,15 @@ module Harnas
     # Append a user message and drive the streaming AgentLoop path,
     # yielding each delta Event as soon as it is appended to the Log.
     # Manifests without a streaming provider fall back to #chat.
-    def stream(text, &block)
-      return chat(text) unless @loaded.stream_provider
+    def stream(text, &)
+      stream_payload(Events::UserMessage.new(text: text).to_h, &)
+    end
+
+    def stream_payload(payload, &block)
+      return chat_payload(payload) unless @loaded.stream_provider
 
       ensure_strategies_installed!
-      append_user_message(text)
+      append_user_payload(payload)
 
       AgentLoop.new(
         session: @loaded.session,
@@ -151,10 +161,10 @@ module Harnas
       @installed_handlers = @loaded.install_strategies!
     end
 
-    def append_user_message(text)
+    def append_user_payload(payload)
       @loaded.session.log.append(
         type: :user_message,
-        payload: Events::UserMessage.new(text: text).to_h
+        payload: payload
       )
     end
 

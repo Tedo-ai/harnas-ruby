@@ -2,9 +2,11 @@
 
 require "harnas/agent"
 require "harnas/agent_loop"
+require "harnas/attachments"
 require "harnas/config"
 require "harnas/event"
 require "harnas/hooks"
+require "harnas/input_file"
 require "harnas/log"
 require "harnas/manifest"
 require "harnas/mcp"

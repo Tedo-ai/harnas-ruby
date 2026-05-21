@@ -4,6 +4,7 @@ require "harnas/runtime"
 require "harnas/conformance/scripted_provider"
 require "harnas/events/tool_use"
 require "harnas/tools/tool"
+require "tmpdir"
 
 RSpec.describe Harnas::Runtime do
   let(:manifest) do
@@ -45,6 +46,11 @@ RSpec.describe Harnas::Runtime do
       expect(runtime.session.id).to eq(session.id)
       expect(runtime.session.log.map { |event| event.payload[:text] }).to eq(["old"])
     end
+  end
+
+  it "derives the default attachment root from the session path" do
+    expect(described_class.default_attachment_root("/tmp/run.jsonl"))
+      .to eq("/tmp/run.attachments")
   end
 
   it "raises a clear error when a Tool instance is passed instead of a Hash descriptor" do

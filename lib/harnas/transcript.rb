@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "base64"
+
 module Harnas
   # UI-neutral projection from a Log to transcript items.
   #
@@ -7,14 +9,18 @@ module Harnas
   # render bubbles, rows, cards, or timelines from the same item stream.
   module Transcript
     def self.project(log, include_tools: true, include_errors: true,
-                     include_annotations: false)
+                     include_annotations: false, content_placeholder: nil)
       log.each.filter_map do |event|
-        build_item(event, include_tools:, include_errors:, include_annotations:)
+        build_item(event, include_tools:, include_errors:, include_annotations:,
+                          content_placeholder:)
       end
     end
 
-    def self.build_item(event, include_tools:, include_errors:, include_annotations:)
-      return message_item(event) if %i[user_message assistant_message].include?(event.type)
+    def self.build_item(event, include_tools:, include_errors:, include_annotations:,
+                        content_placeholder:)
+      if %i[user_message assistant_message].include?(event.type)
+        return message_item(event, content_placeholder:)
+      end
       return tool_item(event) if include_tools && %i[tool_use tool_result].include?(event.type)
       return error_item(event) if include_errors && error_event?(event)
       return annotation_item(event) if include_annotations && event.type == :annotation
@@ -24,15 +30,16 @@ module Harnas
     end
     private_class_method :build_item
 
-    def self.message_item(event)
+    def self.message_item(event, content_placeholder:)
       if event.type == :user_message
-        return item(event, kind: "user", role: "user", text: event.payload[:text].to_s)
+        return item(event, kind: "user", role: "user",
+                           text: message_text(event.payload, content_placeholder:))
       end
 
       item(event,
            kind: "assistant",
            role: "assistant",
-           text: event.payload[:text].to_s,
+           text: message_text(event.payload, content_placeholder:),
            stop_reason: event.payload[:stop_reason],
            usage: event.payload[:usage] || {},
            reasoning: event.payload[:reasoning])
@@ -83,6 +90,53 @@ module Harnas
       %i[provider_error runtime_error].include?(event.type)
     end
     private_class_method :error_event?
+
+    def self.message_text(payload, content_placeholder:)
+      blocks = payload[:content] || payload["content"]
+      return payload[:text].to_s if blocks.nil?
+
+      Array(blocks).map do |block|
+        if block[:type] == "text" || block["type"] == "text"
+          block[:text] || block["text"] || ""
+        else
+          content_placeholder&.call(block) || default_content_placeholder(block)
+        end
+      end.join("\n")
+    end
+    private_class_method :message_text
+
+    def self.default_content_placeholder(block)
+      type = block[:type] || block["type"]
+      media_type = block[:media_type] || block["media_type"]
+      name = block[:name] || block["name"]
+      size = content_block_size(block)
+      parts = [type]
+      parts << name unless name.to_s.empty?
+      parts << media_type unless media_type.to_s.empty?
+      parts << format_byte_size(size) if size.positive?
+      "[#{parts.join(": ")}]"
+    end
+    private_class_method :default_content_placeholder
+
+    def self.content_block_size(block)
+      size = (block[:byte_size] || block["byte_size"]).to_i
+      return size if size.positive?
+
+      source = block[:source] || block["source"] || {}
+      return 0 unless (source[:kind] || source["kind"]) == "base64"
+
+      Base64.strict_decode64(source[:data] || source["data"]).bytesize
+    rescue ArgumentError
+      0
+    end
+    private_class_method :content_block_size
+
+    def self.format_byte_size(size)
+      return "#{(size + 1023) / 1024}kb" if size >= 1024
+
+      "#{size} bytes"
+    end
+    private_class_method :format_byte_size
 
     def self.item(event, fields)
       {

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "harnas/agent"
+require "harnas/attachments"
 require "harnas/manifest"
 require "harnas/session"
 
@@ -10,8 +11,12 @@ module Harnas
   class Runtime
     attr_reader :loaded
 
-    def self.build(manifest:, session_path: nil, resume: false, metadata: {}, **)
-      loaded = Manifest.load(manifest, **)
+    def self.build(manifest:, session_path: nil, resume: false, metadata: {},
+                   attachment_store: nil, **)
+      attachment_store ||= Attachments::FilesystemStore.new(
+        root: default_attachment_root(session_path)
+      )
+      loaded = Manifest.load(manifest, attachment_store: attachment_store, **)
       session =
         if resume && session_path
           Session.load(session_path)
@@ -55,6 +60,16 @@ module Harnas
 
     def save(path)
       session.save(path)
+    end
+
+    def self.default_attachment_root(session_path)
+      if session_path.to_s != ""
+        ext = File.extname(session_path)
+        base = ext.empty? ? session_path : session_path.delete_suffix(ext)
+        return "#{base}.attachments"
+      end
+
+      File.join(Dir.home, ".harnas", "runs", "attachments")
     end
   end
 end
