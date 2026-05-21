@@ -7,6 +7,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and Harnas adheres to [Semantic Versioning](https://semver.org/) on
 the specification as a whole.
 
+## [0.18.1] — 2026-05-22
+
+### Added
+
+- Added event-id preservation checking to Session save/load conformance.
+- Added spawn-agent reciprocity conformance: `spawn_agent` now creates a
+  child Session with reciprocal delegation metadata and an initial task
+  `user_message`.
+
+### Changed
+
+- Lockstep patch release driven by foss/harnas spec audit findings.
+- Validated against fixtures version `0.18.1`: 61/61.
+- Bumped gem metadata to 0.18.1.
+- Audited capability manifest hashing against Go and Python; the v0.18.1
+  sample manifest hashes identically across all three implementations.
+
 ## [0.18.0] — 2026-05-21
 
 ### Added
@@ -515,6 +532,7 @@ Carryovers and deferred decisions, captured for posterity:
   wrapping, which covers most cases — the lifecycle mixin would
   be motivated by a concrete use case we haven't found yet.
 
+[0.18.1]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.18.1
 [0.18.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.18.0
 [0.17.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.17.0
 [0.16.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.16.0

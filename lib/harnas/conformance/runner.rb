@@ -71,13 +71,15 @@ module Harnas
         expected = load_expected(File.join(dir, "expected-log.jsonl"))
         expected_deltas_path = File.join(dir, "expected-deltas.jsonl")
         expected_strategy_events_path = File.join(dir, "expected-strategy-events.jsonl")
+        expected_spawn_children_path = File.join(dir, "expected-spawn-children.json")
 
         actual, actual_deltas, actual_strategy_events = Dir.chdir(dir) do
           run_agent_with_sidecars(
             manifest, script, inputs, streaming: streaming,
                                       attachment_store: load_attachment_store("."),
                                       expected_deltas_path: expected_deltas_path,
-                                      expected_strategy_events_path: expected_strategy_events_path
+                                      expected_strategy_events_path: expected_strategy_events_path,
+                                      expected_spawn_children_path: expected_spawn_children_path
           )
         end
 
@@ -185,20 +187,20 @@ module Harnas
         )
       end
 
-      def self.run_agent_with_sidecars(manifest, script, inputs, streaming: false, # rubocop:disable Metrics/MethodLength
+      def self.run_agent_with_sidecars(manifest, script, inputs, streaming: false, # rubocop:disable Metrics/MethodLength, Metrics/ParameterLists
                                        expected_deltas_path: nil,
                                        attachment_store: nil,
-                                       expected_strategy_events_path: nil)
+                                       expected_strategy_events_path: nil,
+                                       expected_spawn_children_path: nil)
         needs_deltas = expected_deltas_path && File.exist?(expected_deltas_path)
         needs_strategy_events = expected_strategy_events_path &&
                                 File.exist?(expected_strategy_events_path)
-        unless needs_deltas || needs_strategy_events
-          return [
-            run_agent(manifest, script, inputs, streaming: streaming,
-                                                attachment_store: attachment_store),
-            [],
-            []
-          ]
+        needs_spawn_children = expected_spawn_children_path &&
+                               File.exist?(expected_spawn_children_path)
+        unless needs_deltas || needs_strategy_events || needs_spawn_children
+          session = run_session(manifest, script, inputs, streaming: streaming,
+                                                          attachment_store: attachment_store)
+          return [serialize_log(session.log), [], []]
         end
 
         Dir.mktmpdir("harnas-sidecars") do |dir|
@@ -213,6 +215,7 @@ module Harnas
             attachment_store: attachment_store,
             strategy_events_path: (strategy_events_path if needs_strategy_events)
           )
+          verify_spawn_children!(session, expected_spawn_children_path) if needs_spawn_children
           [
             serialize_log(session.log),
             needs_deltas ? load_expected(delta_path) : [],
@@ -320,10 +323,40 @@ module Harnas
         Dir.mktmpdir("harnas-save-load") do |dir|
           path = File.join(dir, "session.jsonl")
           loaded.session.save(path)
+          ids_before = loaded.session.log.map(&:id)
           reloaded = Harnas::Session.load(path)
+          raise "event id preservation mismatch" unless ids_before == reloaded.log.map(&:id)
+
           verify_manifest_snapshot!(reloaded, manifest)
           loaded.with_session(reloaded)
         end
+      end
+
+      def self.verify_spawn_children!(session, path) # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
+        spec = JSON.parse(File.read(path))
+        spawn = session.log.find do |event|
+          event.type == :agent_spawn && event.payload[:task] == spec.fetch("task")
+        end
+        raise "missing agent_spawn for task #{spec.fetch("task")}" unless spawn
+
+        child_id = spawn.payload.fetch(:child_session_id)
+        child_sessions = session.metadata.fetch(:spawn_child_sessions, {})
+        child = child_sessions.fetch(child_id) { raise "missing child Session #{child_id}" }
+        unless child.parent_session_id == session.id &&
+               child.spawn_id == spawn.payload.fetch(:spawn_id) &&
+               child.spawned_by_event_id == spawn.payload.fetch(:spawned_by_event_id)
+          raise "child reciprocity mismatch"
+        end
+        if child.root_session_id.to_s.empty? ||
+           child.delegation_chain.empty?
+          raise "child delegation metadata missing"
+        end
+
+        first = child.log.first
+        return if first&.type == :user_message &&
+                  first.payload[:text] == spec.fetch("child_initial_user_text")
+
+        raise "child initial user_message mismatch"
       end
 
       def self.verify_manifest_snapshot!(session, expected_manifest)
@@ -360,10 +393,11 @@ module Harnas
       end
 
       def self.run_loop(loaded, scripted, streaming: false)
+        runner = loaded.runner
         loop_kwargs = {
           session: loaded.session,
           projection: loaded.projection,
-          runner: loaded.runner,
+          runner: runner,
           max_turns: 3
         }
         if streaming
@@ -373,6 +407,9 @@ module Harnas
           loop_kwargs[:ingestor] = loaded.ingestor
         end
         Harnas::AgentLoop.new(**loop_kwargs).run
+        return if runner.child_sessions.empty?
+
+        loaded.session.metadata[:spawn_child_sessions] = runner.child_sessions
       end
 
       def self.verify_fork!(parent, forked, at_seq)
@@ -535,7 +572,7 @@ module Harnas
       def self.first_mismatch(actual, expected)
         upper = [actual.size, expected.size].max
         upper.times do |i|
-          next if actual[i] == expected[i]
+          next if wildcard_match?(actual[i], expected[i])
 
           return {
             at_seq: i,
@@ -544,6 +581,32 @@ module Harnas
           }
         end
         nil
+      end
+
+      def self.wildcard_match?(actual, expected)
+        return actual == expected unless contains_generated_wildcard?(expected)
+
+        wildcard_value_match?(actual, expected)
+      end
+
+      def self.contains_generated_wildcard?(value)
+        JSON.generate(value).include?("<generated>")
+      end
+
+      def self.wildcard_value_match?(actual, expected)
+        return !actual.nil? && actual != "" if expected == "<generated>"
+
+        if actual.is_a?(Hash) && expected.is_a?(Hash)
+          return false unless actual.keys.sort == expected.keys.sort
+
+          return expected.all? { |key, value| wildcard_value_match?(actual[key], value) }
+        end
+        if actual.is_a?(Array) && expected.is_a?(Array)
+          return false unless actual.size == expected.size
+
+          return actual.zip(expected).all? { |a, e| wildcard_value_match?(a, e) }
+        end
+        actual == expected
       end
 
       def self.credential_proxy_secret_diff(actual, dir)

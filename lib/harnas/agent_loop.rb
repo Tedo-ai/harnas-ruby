@@ -244,7 +244,8 @@ module Harnas
         append_denial(tool_use_event, denied[:reason])
       else
         @runner&.run(tool_use_with_argument_overrides(tool_use_event, decisions),
-                     into_log: @session.log)
+                     into_log: @session.log,
+                     session: @session)
       end
 
       @session.hooks.invoke(

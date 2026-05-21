@@ -12,17 +12,20 @@ module Harnas
     # the tool implementation and records it as a failure ToolResult.
     # Emits :tool_invoked for every execution (success or failure).
     class Runner
+      attr_reader :child_sessions
+
       def initialize(registry)
         @registry = registry
+        @child_sessions = {}
       end
 
-      def run(tool_use_event, into_log:) # rubocop:disable Metrics/AbcSize
+      def run(tool_use_event, into_log:, session: nil) # rubocop:disable Metrics/AbcSize
         payload = tool_use_event.payload
         started = monotonic_ms
 
         begin
           tool   = @registry[payload[:name]]
-          return run_spawn_agent(tool_use_event, into_log: into_log) \
+          return run_spawn_agent(tool_use_event, into_log: into_log, session: session) \
             if tool.handler == "harnas.builtin.spawn_agent"
 
           output = tool.call(arguments_for(tool, payload[:arguments] || {}))
@@ -48,7 +51,7 @@ module Harnas
 
       private
 
-      def run_spawn_agent(tool_use_event, into_log:)
+      def run_spawn_agent(tool_use_event, into_log:, session:)
         payload = tool_use_event.payload
         args = payload[:arguments] || {}
         task = value_for(args, :task)
@@ -56,9 +59,30 @@ module Harnas
 
         spawn_id = "spn_#{SecureRandom.uuid}"
         child_session_id = "ses_#{SecureRandom.uuid}"
+        child = build_child_session(session, tool_use_event, args, spawn_id, child_session_id, task)
+        @child_sessions[child_session_id] = child
         append_spawn_agent_event(into_log, tool_use_event, args, spawn_id, child_session_id, task)
         append_spawn_agent_result(into_log, payload[:id], spawn_id, child_session_id)
         emit(tool_use_event, :ok, 0)
+      end
+
+      def build_child_session(parent, tool_use_event, args, spawn_id, child_session_id, task)
+        metadata = spawn_agent_metadata(args)
+        parent_id = parent&.id
+        root_id = parent&.root_session_id || parent_id
+        chain = parent ? parent.delegation_chain.map(&:dup) : []
+        chain << { session_id: parent.id, spawn_id: parent.spawn_id } if parent
+        Harnas::Session.new(
+          id: child_session_id,
+          metadata: metadata,
+          parent_session_id: parent_id,
+          root_session_id: root_id,
+          spawn_id: spawn_id,
+          spawned_by_event_id: tool_use_event.id,
+          delegation_chain: chain
+        ).tap do |child|
+          child.log.append(type: :user_message, payload: { text: task })
+        end
       end
 
       def append_spawn_agent_event(log, tool_use_event, args, spawn_id, child_session_id, task)

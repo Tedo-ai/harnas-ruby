@@ -134,7 +134,7 @@ module Harnas
       # Convenience: build a runner + AgentLoop with the bundle's parts.
       # Harnas::Tools::Runner takes the registry positionally.
       def runner
-        Harnas::Tools::Runner.new(@registry)
+        @runner ||= Harnas::Tools::Runner.new(@registry)
       end
 
       def with_session(session)
