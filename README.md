@@ -1,11 +1,11 @@
 # harnas-ruby
 
 Ruby reference implementation of [Harnas](https://github.com/Tedo-ai/harnas) —
-a specification for LLM agent harnesses. Passes 61/61 conformance fixtures
+a specification for LLM agent harnesses. Passes 62/62 conformance fixtures
 against the spec; live providers Anthropic + OpenAI + Gemini + Ollama; 689 RSpec
 examples; rubocop clean.
 
-**Version 0.18.1** (2026-05-22). Tracks Harnas spec 0.18.1.
+**Version 0.18.2** (2026-05-22). Tracks Harnas spec 0.18.2.
 
 ## What's in here
 
@@ -62,7 +62,7 @@ the web inspector on Rails 7.0, run it as a separate process.
 bundle install
 bundle exec rspec               # 689 examples
 bundle exec rubocop             # clean
-bundle exec bin/conformance.rb  # 61/61 fixtures
+bundle exec bin/conformance.rb  # 62/62 fixtures
 bundle exec bin/harnas run examples/01-hello-world/manifest.json --input "hello"
 bundle exec bin/harnas chat examples/05-codebase-qa/manifest.json
 bundle exec bin/harnas inspect ~/.harnas/runs/<session>.jsonl

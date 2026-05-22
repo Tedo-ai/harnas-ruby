@@ -10,6 +10,7 @@ require "harnas/events/user_message"
 require "harnas/attachments"
 require "harnas/hooks"
 require "harnas/tools/builtin"
+require "harnas/tools/snapshot"
 require "harnas/projection"
 require "harnas/conformance/scripted_provider"
 require "harnas/conformance/scripted_stream_provider"
@@ -72,8 +73,9 @@ module Harnas
         expected_deltas_path = File.join(dir, "expected-deltas.jsonl")
         expected_strategy_events_path = File.join(dir, "expected-strategy-events.jsonl")
         expected_spawn_children_path = File.join(dir, "expected-spawn-children.json")
+        expected_tool_descriptors_path = File.join(dir, "expected-tool-descriptors.json")
 
-        actual, actual_deltas, actual_strategy_events = Dir.chdir(dir) do
+        actual, actual_deltas, actual_strategy_events, actual_tool_descriptors = Dir.chdir(dir) do
           run_agent_with_sidecars(
             manifest, script, inputs, streaming: streaming,
                                       attachment_store: load_attachment_store("."),
@@ -91,6 +93,15 @@ module Harnas
           diff = first_mismatch(
             actual_strategy_events,
             load_expected(expected_strategy_events_path)
+          )
+        end
+        if diff.nil? && File.exist?(expected_tool_descriptors_path)
+          descriptors = actual_tool_descriptors.map do |descriptor|
+            descriptor.except("args_key_style")
+          end
+          diff = first_mismatch(
+            descriptors,
+            JSON.parse(File.read(expected_tool_descriptors_path))
           )
         end
         diff ||= credential_proxy_secret_diff(actual, dir)
@@ -187,7 +198,7 @@ module Harnas
         )
       end
 
-      def self.run_agent_with_sidecars(manifest, script, inputs, streaming: false, # rubocop:disable Metrics/MethodLength, Metrics/ParameterLists
+      def self.run_agent_with_sidecars(manifest, script, inputs, streaming: false, # rubocop:disable Metrics/MethodLength, Metrics/ParameterLists, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
                                        expected_deltas_path: nil,
                                        attachment_store: nil,
                                        expected_strategy_events_path: nil,
@@ -200,7 +211,7 @@ module Harnas
         unless needs_deltas || needs_strategy_events || needs_spawn_children
           session = run_session(manifest, script, inputs, streaming: streaming,
                                                           attachment_store: attachment_store)
-          return [serialize_log(session.log), [], []]
+          return [serialize_log(session.log), [], [], session.metadata[:tools] || []]
         end
 
         Dir.mktmpdir("harnas-sidecars") do |dir|
@@ -219,7 +230,8 @@ module Harnas
           [
             serialize_log(session.log),
             needs_deltas ? load_expected(delta_path) : [],
-            needs_strategy_events ? load_expected(strategy_events_path) : []
+            needs_strategy_events ? load_expected(strategy_events_path) : [],
+            session.metadata[:tools] || []
           ]
         end
       end
@@ -407,6 +419,8 @@ module Harnas
           loop_kwargs[:ingestor] = loaded.ingestor
         end
         Harnas::AgentLoop.new(**loop_kwargs).run
+        loaded.session.metadata[:tools] =
+          Harnas::Tools::Snapshot.descriptors(loaded.registry)
         return if runner.child_sessions.empty?
 
         loaded.session.metadata[:spawn_child_sessions] = runner.child_sessions

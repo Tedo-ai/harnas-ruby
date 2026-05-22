@@ -7,6 +7,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and Harnas adheres to [Semantic Versioning](https://semver.org/) on
 the specification as a whole.
 
+## [0.18.2] — 2026-05-22
+
+### Added
+
+- Added `shell_type` resolution for `harnas.builtin.bash_session` tool
+  config and validated against fixtures version `0.18.2`: 62/62.
+- Updated the bundled manifest schema with the `shell_type` config
+  field.
+
+### Changed
+
+- Audited `bash_session` process handling for Windows portability and
+  guarded negative-PID process-group signaling behind platform checks.
+- Bumped gem metadata and MCP client version to 0.18.2.
+- Lockstep patch release driven by AgentStaple's Windows preview
+  packaging work.
+
 ## [0.18.1] — 2026-05-22
 
 ### Added
@@ -532,6 +549,7 @@ Carryovers and deferred decisions, captured for posterity:
   wrapping, which covers most cases — the lifecycle mixin would
   be motivated by a concrete use case we haven't found yet.
 
+[0.18.2]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.18.2
 [0.18.1]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.18.1
 [0.18.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.18.0
 [0.17.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.17.0

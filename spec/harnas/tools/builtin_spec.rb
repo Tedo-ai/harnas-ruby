@@ -43,6 +43,11 @@ RSpec.describe Harnas::Tools::Builtin do
         expect(d[:input_schema]).to be_a(Hash)
       end
     end
+
+    it "exposes shell_type config on bash_session" do
+      descriptor = described_class.descriptors.find { |item| item[:name] == "bash_session" }
+      expect(descriptor[:config][:shell_type]).to eq("auto")
+    end
   end
 
   describe "read_file" do

@@ -218,6 +218,11 @@ module Harnas
                 additionalProperties: { type: "string" }
               }
             }
+          },
+          config: {
+            shell: "auto",
+            shell_type: "auto",
+            max_output_bytes: 64 * 1024
           }
         },
         {
@@ -386,6 +391,15 @@ module Harnas
       end
       private_class_method :bash_session_registry
 
+      def self.default_bash_session_shell_type
+        return "posix" unless Gem.win_platform?
+
+        powershell = system("where pwsh >NUL 2>NUL") ||
+                     system("where powershell.exe >NUL 2>NUL")
+        powershell ? "powershell" : "cmd"
+      end
+      private_class_method :default_bash_session_shell_type
+
       class BashSessionRegistry
         def initialize
           @sessions = {}
@@ -539,10 +553,10 @@ module Harnas
 
         def start_shell(config)
           @shell = resolve_shell(config)
+          @shell_type = resolve_shell_type(config, @shell)
           @stdin, stdout, stderr, @wait_thread = Open3.popen3(
             @shell,
-            chdir: resolve_cwd(config),
-            pgroup: true
+            **popen_options(config)
           )
           @stdin.sync = true
           @stdout_thread = Thread.new { read_stdout(stdout) }
@@ -552,8 +566,33 @@ module Harnas
 
         def resolve_shell(config)
           shell = config_value(config, :shell).to_s
-          shell = "bash" if shell.empty?
+          shell = default_shell if shell.empty? || shell == "auto"
           shell == "bash" && !system("command -v bash >/dev/null 2>&1") ? "sh" : shell
+        end
+
+        def default_shell
+          return "bash" unless Gem.win_platform?
+
+          %w[pwsh powershell.exe cmd.exe].find { |shell| system("where #{shell} >NUL 2>NUL") } ||
+            "cmd.exe"
+        end
+
+        def resolve_shell_type(config, shell)
+          shell_type = config_value(config, :shell_type).to_s
+          return shell_type unless shell_type.empty? || shell_type == "auto"
+
+          return "posix" unless Gem.win_platform?
+
+          lower = shell.downcase
+          return "powershell" if lower.include?("powershell") || lower.include?("pwsh")
+
+          "cmd"
+        end
+
+        def popen_options(config)
+          options = { chdir: resolve_cwd(config) }
+          options[:pgroup] = true unless Gem.win_platform?
+          options
         end
 
         def resolve_cwd(config)
@@ -592,13 +631,31 @@ module Harnas
         end
 
         def framed_command(command, token)
+          return powershell_framed_command(command, token) if @shell_type == "powershell"
+          return cmd_framed_command(command, token) if @shell_type == "cmd"
+
           "\n{ #{command}\n} </dev/null; __harnas_status=$?; " \
             "printf '__HARNAS_ERR_DONE_#{token}\\n' >&2; " \
             "printf '__HARNAS_DONE_#{token}:%s\\n' \"$__harnas_status\"\n"
         end
 
+        def powershell_framed_command(command, token)
+          "\n& { #{command} }; $__harnas_status=$LASTEXITCODE; " \
+            "if ($null -eq $__harnas_status) { $__harnas_status=0 }; " \
+            "[Console]::Error.WriteLine('__HARNAS_ERR_DONE_#{token}'); " \
+            "[Console]::Out.WriteLine('__HARNAS_DONE_#{token}:' + $__harnas_status)\n"
+        end
+
+        def cmd_framed_command(command, token)
+          "\r\n#{command}\r\nset __harnas_status=%ERRORLEVEL%\r\n" \
+            "echo __HARNAS_ERR_DONE_#{token} 1>&2\r\n" \
+            "echo __HARNAS_DONE_#{token}:%__harnas_status%\r\n"
+        end
+
         def command_with_env(command, env)
           return command if env.empty?
+          return powershell_command_with_env(command, env) if @shell_type == "powershell"
+          return cmd_command_with_env(command, env) if @shell_type == "cmd"
 
           assignments = env.keys.sort.map do |key|
             "#{key}=#{shell_quote(env.fetch(key))}"
@@ -608,6 +665,23 @@ module Harnas
 
         def shell_quote(value)
           "'#{value.gsub("'", "'\"'\"'")}'"
+        end
+
+        def powershell_command_with_env(command, env)
+          assignments = env.keys.sort.map do |key|
+            "$__harnas_old_#{key}=$env:#{key}; $env:#{key}=#{powershell_quote(env.fetch(key))}"
+          end
+          restores = env.keys.sort.map { |key| "$env:#{key}=$__harnas_old_#{key}" }
+          "#{assignments.join("; ")}; try { #{command} } finally { #{restores.join("; ")} }"
+        end
+
+        def cmd_command_with_env(command, env)
+          assignments = env.keys.sort.map { |key| "set \"#{key}=#{env.fetch(key)}\"" }
+          (["setlocal"] + assignments + [command, "endlocal"]).join(" & ")
+        end
+
+        def powershell_quote(value)
+          "'#{value.gsub("'", "''")}'"
         end
 
         def wait_for_command(current, timeout)
@@ -696,7 +770,8 @@ module Harnas
         end
 
         def kill_process_group(signal)
-          Process.kill(signal, -@wait_thread.pid)
+          target = Gem.win_platform? ? @wait_thread.pid : -@wait_thread.pid
+          Process.kill(signal, target)
         rescue Errno::ESRCH, Errno::EPERM
           nil
         end

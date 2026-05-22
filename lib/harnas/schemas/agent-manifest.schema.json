@@ -93,14 +93,22 @@
             "type": "object",
             "description": "JSON Schema describing the tool's argument shape."
           },
-          "config": {
-            "type": "object",
-            "description": "Implementer-opaque JSON-serializable configuration preserved with the tool entry and made available to the resolved handler."
-          },
           "args_key_style": {
             "type": "string",
             "enum": ["symbol", "string"],
-            "description": "How parsed tool-call argument keys are presented to the handler. Defaults to symbol."
+            "description": "Ruby adapter extension controlling whether handler argument keys are symbolized or left as strings."
+          },
+          "config": {
+            "type": "object",
+            "description": "Implementer-opaque JSON-serializable configuration preserved with the tool entry and made available to the resolved handler.",
+            "properties": {
+              "shell_type": {
+                "type": "string",
+                "enum": ["auto", "posix", "powershell", "cmd"],
+                "description": "Optional bash_session shell family hint. 'auto' asks the runtime to resolve the active shell family."
+              }
+            },
+            "additionalProperties": true
           }
         }
       }

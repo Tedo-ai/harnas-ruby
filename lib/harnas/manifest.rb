@@ -510,7 +510,7 @@ module Harnas
             name: tool["name"],
             description: tool["description"],
             input_schema: symbolize_schema(tool["input_schema"]),
-            config: tool.fetch("config", {}),
+            config: effective_tool_config(tool),
             handler: handler_name,
             args_key_style: tool_args_key_style,
             &handler
@@ -519,6 +519,18 @@ module Harnas
       end
 
       registry
+    end
+
+    def self.effective_tool_config(tool)
+      config = tool.fetch("config", {})
+      return config unless tool["handler"] == "harnas.builtin.bash_session"
+
+      out = config.dup
+      shell_type = out["shell_type"] || out[:shell_type]
+      out["shell_type"] = Harnas::Tools::Builtin.send(:default_bash_session_shell_type) \
+        if shell_type.to_s.empty? || shell_type == "auto"
+      out["shell"] = "auto" if (out["shell"] || out[:shell]).to_s.empty?
+      out
     end
 
     def self.validate_tool_descriptor_types!(tools)

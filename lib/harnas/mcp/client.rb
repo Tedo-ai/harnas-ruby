@@ -7,7 +7,7 @@ module Harnas
   module MCP
     PROTOCOL_VERSION = "2024-11-05"
     CLIENT_NAME = "harnas-ruby"
-    CLIENT_VERSION = "0.18.1"
+    CLIENT_VERSION = "0.18.2"
     DEFAULT_TIMEOUT = 30
 
     class Error < StandardError; end
