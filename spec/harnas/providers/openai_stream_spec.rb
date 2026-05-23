@@ -68,7 +68,8 @@ RSpec.describe Harnas::Providers::OpenAIStream do
       expect(consolidated[:payload][:text]).to eq("Hello")
       expect(consolidated[:payload][:stop_reason]).to eq(:end_turn)
       expect(consolidated[:payload][:usage])
-        .to eq({ input_tokens: 5, output_tokens: 2 })
+        .to include(input_tokens: 5, output_tokens: 2, total_tokens: 7,
+                    provenance: "provider_reported")
     end
 
     it "ignores the [DONE] sentinel" do

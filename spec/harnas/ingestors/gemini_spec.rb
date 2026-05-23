@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "harnas/ingestors/gemini"
+require "harnas/usage"
 require "json"
 
 RSpec.describe Harnas::Ingestors::Gemini do
@@ -62,12 +63,12 @@ RSpec.describe Harnas::Ingestors::Gemini do
   end
 
   it "extracts promptTokenCount and candidatesTokenCount into the neutral usage" do
-    expect(payload_of(minimal_response)[:usage]).to eq({ input_tokens: 6, output_tokens: 4 })
+    expect(payload_of(minimal_response)[:usage]).to eq(Harnas::Usage.normalize(minimal_response["usageMetadata"]))
   end
 
   it "defaults missing usage fields to 0" do
     response = minimal_response.merge("usageMetadata" => {})
-    expect(payload_of(response)[:usage]).to eq({ input_tokens: 0, output_tokens: 0 })
+    expect(payload_of(response)[:usage]).to eq(Harnas::Usage.normalize({}))
   end
 
   it "raises when there are no candidates" do

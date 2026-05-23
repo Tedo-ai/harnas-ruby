@@ -2,6 +2,7 @@
 
 require "digest"
 require "json"
+require "time"
 require "harnas/event"
 require "harnas/observation"
 
@@ -45,7 +46,8 @@ module Harnas
       seq    = @events.size
       digest = Digest::SHA256.hexdigest(JSON.generate(payload))[0, 12]
       id     = "evt_#{seq}_#{digest}"
-      event  = Event.new(seq: seq, id: id, type: type, payload: payload)
+      event  = Event.new(seq: seq, id: id, timestamp: Time.now.utc.iso8601(6),
+                         type: type, payload: payload)
       @events << event
       (@observation || Observation).emit(:event_appended, event: event, log_size: @events.size)
       event
@@ -60,6 +62,7 @@ module Harnas
           io.puts JSON.generate(
             seq: event.seq,
             id: event.id,
+            timestamp: event.timestamp,
             type: event.type.to_s,
             payload: event.payload
           )
@@ -120,6 +123,7 @@ module Harnas
       type    = row.fetch(:type).to_sym
       payload = restore_payload(type, row.fetch(:payload))
       event   = Event.new(seq: row.fetch(:seq), id: row.fetch(:id),
+                          timestamp: row[:timestamp],
                           type: type, payload: payload)
       @events << event
     end

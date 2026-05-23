@@ -4,6 +4,7 @@ require "harnas/events/annotation"
 require "harnas/events/assistant_message"
 require "harnas/events/tool_use"
 require "harnas/observation"
+require "harnas/usage"
 
 module Harnas
   module Ingestors
@@ -44,9 +45,10 @@ module Harnas
 
         parts = Array(candidate.dig("content", "parts"))
         stop  = resolve_stop_reason(candidate["finishReason"], parts)
-        usage = normalize_usage(response["usageMetadata"] || {})
+        wire_usage = response["usageMetadata"] || {}
+        usage = Harnas::Usage.normalize(wire_usage)
 
-        events = [assistant_event(parts, stop, usage)]
+        events = [assistant_event(parts, stop, wire_usage, response)]
         parts.each do |part|
           next unless part["functionCall"]
 
@@ -61,13 +63,14 @@ module Harnas
 
       private
 
-      def assistant_event(parts, stop, usage)
+      def assistant_event(parts, stop, usage, response)
         text = parts.map { |p| p["text"].to_s }.join
         reasoning = reasoning_blocks(parts)
         {
           type: :assistant_message,
           payload: Events::AssistantMessage.new(
-            text: text, stop_reason: stop, usage: usage, reasoning: reasoning
+            text: text, stop_reason: stop, usage: usage, reasoning: reasoning,
+            provider: "gemini", model: response["modelVersion"] || response["model"]
           ).to_h
         }
       end
@@ -126,13 +129,6 @@ module Harnas
         return :tool_use if parts.any? { |p| p["functionCall"] }
 
         FINISH_REASON_MAP.fetch(wire_finish, :other)
-      end
-
-      def normalize_usage(wire_usage)
-        {
-          input_tokens: wire_usage["promptTokenCount"] || 0,
-          output_tokens: wire_usage["candidatesTokenCount"] || 0
-        }
       end
 
       def emit_tokens_consumed(usage)

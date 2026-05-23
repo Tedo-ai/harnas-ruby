@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "harnas/events/assistant_message"
+require "harnas/usage"
 
 RSpec.describe Harnas::Events::AssistantMessage do
   def make(**overrides)
@@ -8,11 +9,15 @@ RSpec.describe Harnas::Events::AssistantMessage do
     described_class.new(**defaults, **overrides)
   end
 
+  def canonical_usage(raw = { input_tokens: 1, output_tokens: 1 })
+    Harnas::Usage.normalize(raw)
+  end
+
   it "holds text, stop_reason, usage, and optional reasoning" do
     msg = make
     expect(msg.text).to eq("hi")
     expect(msg.stop_reason).to eq(:end_turn)
-    expect(msg.usage).to eq({ input_tokens: 1, output_tokens: 1 })
+    expect(msg.usage).to eq(canonical_usage)
     expect(msg.reasoning).to be_nil
   end
 
@@ -20,9 +25,9 @@ RSpec.describe Harnas::Events::AssistantMessage do
     expect(make).to be_frozen
   end
 
-  it "defaults usage to an empty Hash" do
+  it "defaults usage to unavailable canonical usage" do
     msg = described_class.new(text: "hi", stop_reason: :end_turn)
-    expect(msg.usage).to eq({})
+    expect(msg.usage).to eq(canonical_usage({}))
   end
 
   it "rejects a non-String text" do
@@ -66,7 +71,7 @@ RSpec.describe Harnas::Events::AssistantMessage do
 
   it "serializes to a hash via #to_h" do
     expect(make.to_h).to eq({ text: "hi", stop_reason: :end_turn,
-                              usage: { input_tokens: 1, output_tokens: 1 } })
+                              usage: canonical_usage })
   end
 
   it "serializes reasoning when present" do

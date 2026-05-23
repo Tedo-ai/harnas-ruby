@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "harnas/usage"
+
 module Harnas
   module Events
     # Payload type for an :assistant_message Event. Carries the model's
@@ -8,8 +10,8 @@ module Harnas
     # `usage` (a Hash; the wire shape is provider-specific). Each
     # provider's Ingestor normalizes the wire response into this
     # shape.
-    AssistantMessage = Data.define(:text, :stop_reason, :usage, :reasoning) do
-      def initialize(text:, stop_reason:, usage: {}, reasoning: nil)
+    AssistantMessage = Data.define(:text, :stop_reason, :usage, :reasoning, :provider, :model) do
+      def initialize(text:, stop_reason:, usage: {}, reasoning: nil, provider: nil, model: nil)
         allowed = %i[end_turn max_tokens tool_use stop_sequence refusal other]
 
         raise ArgumentError, "text must be a String"        unless text.is_a?(String)
@@ -24,12 +26,15 @@ module Harnas
           raise ArgumentError, "reasoning must be an Array of text blocks"
         end
 
-        super
+        super(text: text, stop_reason: stop_reason, usage: Harnas::Usage.normalize(usage),
+              reasoning: reasoning, provider: provider, model: model)
       end
 
       def to_h
         out = { text: text, stop_reason: stop_reason, usage: usage }
         out[:reasoning] = reasoning unless reasoning.nil? || reasoning.empty?
+        out[:provider] = provider if provider
+        out[:model] = model if model
         out
       end
 

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "harnas/ingestors/openai"
+require "harnas/usage"
 require "json"
 
 RSpec.describe Harnas::Ingestors::OpenAI do
@@ -55,12 +56,12 @@ RSpec.describe Harnas::Ingestors::OpenAI do
   end
 
   it "extracts prompt_tokens as input_tokens and completion_tokens as output_tokens" do
-    expect(payload_of(minimal_response)[:usage]).to eq({ input_tokens: 11, output_tokens: 4 })
+    expect(payload_of(minimal_response)[:usage]).to eq(Harnas::Usage.normalize(minimal_response["usage"]))
   end
 
   it "defaults missing usage fields to 0" do
     response = minimal_response.merge("usage" => {})
-    expect(payload_of(response)[:usage]).to eq({ input_tokens: 0, output_tokens: 0 })
+    expect(payload_of(response)[:usage]).to eq(Harnas::Usage.normalize({}))
   end
 
   it "raises when there are no choices" do

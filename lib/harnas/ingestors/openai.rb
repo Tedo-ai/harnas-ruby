@@ -4,6 +4,7 @@ require "json"
 require "harnas/events/assistant_message"
 require "harnas/events/tool_use"
 require "harnas/observation"
+require "harnas/usage"
 
 module Harnas
   module Ingestors
@@ -31,9 +32,10 @@ module Harnas
 
         message = choice["message"] || {}
         stop    = FINISH_REASON_MAP.fetch(choice["finish_reason"], :other)
-        usage   = normalize_usage(response["usage"] || {})
+        wire_usage = response["usage"] || {}
+        usage = Harnas::Usage.normalize(wire_usage)
 
-        events = [assistant_event(message, stop, usage)]
+        events = [assistant_event(message, stop, wire_usage, response)]
         Array(message["tool_calls"]).each do |tc|
           events << tool_use_event(tc)
         end
@@ -44,14 +46,16 @@ module Harnas
 
       private
 
-      def assistant_event(message, stop, usage)
+      def assistant_event(message, stop, usage, response)
         {
           type: :assistant_message,
           payload: Events::AssistantMessage.new(
             text: message["content"].to_s,
             stop_reason: stop,
             usage: usage,
-            reasoning: reasoning_blocks(message)
+            reasoning: reasoning_blocks(message),
+            provider: "openai",
+            model: response["model"]
           ).to_h
         }
       end
@@ -89,13 +93,6 @@ module Harnas
         parsed.is_a?(Hash) ? parsed.transform_keys(&:to_sym) : {}
       rescue JSON::ParserError
         {}
-      end
-
-      def normalize_usage(wire_usage)
-        {
-          input_tokens: wire_usage["prompt_tokens"] || 0,
-          output_tokens: wire_usage["completion_tokens"] || 0
-        }
       end
 
       def emit_tokens_consumed(usage)

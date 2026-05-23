@@ -6,6 +6,7 @@ require "harnas/observation"
 require "harnas/events/provider_error"
 require "harnas/events/tool_result"
 require "harnas/providers/retry_policy"
+require "harnas/usage"
 
 module Harnas
   # The reusable agent loop: drives Log → Projection → Provider →
@@ -153,7 +154,10 @@ module Harnas
 
       @session.hooks.invoke(:pre_ingest, session: @session, response: response)
       events = @ingestor.call(response)
-      events.each { |e| @session.log.append(**e) }
+      events.each do |event|
+        stamp_assistant_identity!(event, request)
+        @session.log.append(**event)
+      end
       @session.hooks.invoke(:post_ingest, session: @session, events: events)
     end
 
@@ -172,8 +176,18 @@ module Harnas
         @session.observation.emit(:stream_event, event: observed)
         @on_stream_event&.call(observed) if STREAM_DELTA_TYPES.include?(type)
       else
+        stamp_assistant_identity!(event, {})
         @session.log.append(**event)
       end
+    end
+
+    def stamp_assistant_identity!(event, request)
+      return unless event[:type] == :assistant_message
+
+      payload = event[:payload]
+      payload[:provider] ||= provider_kind_for_error.to_s unless provider_kind_for_error == :unknown
+      payload[:model] ||= request[:model] || request["model"]
+      payload[:usage] = Harnas::Usage.normalize(payload[:usage] || {})
     end
 
     def append_provider_error(error, attempt:, terminal:)
@@ -292,8 +306,9 @@ module Harnas
         type: :tool_result,
         payload: Events::ToolResult.new(
           tool_use_id: tool_use_event.payload[:id],
-          error: "denied by hook: #{reason}"
-        ).to_h.merge(approval: { decision: "rejected", reason: reason })
+          error: "denied by hook: #{reason}",
+          approval: { decision: "rejected", rule_matched: reason, applied_diff: nil }
+        ).to_h
       )
     end
   end

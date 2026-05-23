@@ -62,6 +62,7 @@ module Harnas
           :restore,
           seq: event.seq,
           id: event.id,
+          timestamp: event.timestamp,
           type: event.type,
           payload: event.payload
         )
@@ -165,6 +166,7 @@ module Harnas
         io.puts JSON.generate(
           seq: event.seq,
           id: event.id,
+          timestamp: event.timestamp,
           type: event.type.to_s,
           payload: event.payload
         )

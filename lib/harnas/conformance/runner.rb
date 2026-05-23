@@ -298,6 +298,9 @@ module Harnas
         if input.is_a?(Hash) && input.key?("revert")
           return append_revert(loaded, input.fetch("revert"))
         end
+        if input.is_a?(Hash) && input.key?("append_events")
+          return append_events(loaded, input.fetch("append_events"))
+        end
         if input.is_a?(Hash) && input.key?("fork")
           return fork_loaded(loaded, input.fetch("fork").fetch("at_seq"))
         end
@@ -321,6 +324,14 @@ module Harnas
 
       def self.append_revert(loaded, revokes)
         loaded.session.log.append(type: :revert, payload: { revokes: revokes })
+        loaded
+      end
+
+      def self.append_events(loaded, events)
+        Array(events).each do |event|
+          loaded.session.log.append(type: event.fetch("type").to_sym,
+                                    payload: normalize(event.fetch("payload")))
+        end
         loaded
       end
 
@@ -568,6 +579,7 @@ module Harnas
         log.map do |event|
           normalize(
             "seq" => event.seq,
+            "timestamp" => event.timestamp,
             "type" => event.type.to_s,
             "payload" => event.payload
           )
@@ -598,9 +610,40 @@ module Harnas
       end
 
       def self.wildcard_match?(actual, expected)
+        actual = normalize_actual_for_expected(actual, expected)
         return actual == expected unless contains_generated_wildcard?(expected)
 
         wildcard_value_match?(actual, expected)
+      end
+
+      def self.normalize_actual_for_expected(actual, expected)
+        return actual unless actual.is_a?(Hash) && expected.is_a?(Hash)
+
+        actual = actual.dup
+        actual.delete("timestamp") unless expected.key?("timestamp")
+        if actual["payload"].is_a?(Hash) && expected["payload"].is_a?(Hash)
+          actual["payload"] = filter_payload_for_expected(actual["payload"], expected["payload"])
+        end
+        actual
+      end
+
+      def self.filter_payload_for_expected(actual, expected)
+        filtered = actual.select { |key, _| expected.key?(key) }
+        if expected["usage"].is_a?(Hash) && actual["usage"].is_a?(Hash)
+          filtered["usage"] = filter_map_for_expected(actual["usage"], expected["usage"])
+        end
+        filtered
+      end
+
+      def self.filter_map_for_expected(actual, expected)
+        expected.each_with_object({}) do |(key, expected_value), out|
+          actual_value = actual[key]
+          out[key] = if expected_value.is_a?(Hash) && actual_value.is_a?(Hash)
+                       filter_map_for_expected(actual_value, expected_value)
+                     else
+                       actual_value
+                     end
+        end
       end
 
       def self.contains_generated_wildcard?(value)

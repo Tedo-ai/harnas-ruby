@@ -3,6 +3,7 @@
 require "harnas/events/assistant_message"
 require "harnas/events/tool_use"
 require "harnas/observation"
+require "harnas/usage"
 
 module Harnas
   module Ingestors
@@ -28,10 +29,11 @@ module Harnas
       def call(response)
         content = response["content"] || []
         stop    = STOP_REASON_MAP.fetch(response["stop_reason"], :other)
-        usage   = normalize_usage(response["usage"] || {})
+        wire_usage = response["usage"] || {}
+        usage = Harnas::Usage.normalize(wire_usage)
 
         events = []
-        events << assistant_event(content, stop, usage)
+        events << assistant_event(content, stop, wire_usage, response)
         content.each do |block|
           events << tool_use_event(block) if block["type"] == "tool_use"
         end
@@ -42,20 +44,14 @@ module Harnas
 
       private
 
-      def normalize_usage(wire_usage)
-        {
-          input_tokens: wire_usage["input_tokens"] || 0,
-          output_tokens: wire_usage["output_tokens"] || 0
-        }
-      end
-
-      def assistant_event(content, stop, usage)
+      def assistant_event(content, stop, usage, response)
         text = content.select { |b| b["type"] == "text" }.map { |b| b["text"].to_s }.join
         reasoning = reasoning_blocks(content)
         {
           type: :assistant_message,
           payload: Events::AssistantMessage.new(
-            text: text, stop_reason: stop, usage: usage, reasoning: reasoning
+            text: text, stop_reason: stop, usage: usage, reasoning: reasoning,
+            provider: "anthropic", model: response["model"]
           ).to_h
         }
       end

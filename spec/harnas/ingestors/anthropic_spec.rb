@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "harnas/ingestors/anthropic"
+require "harnas/usage"
 require "json"
 
 RSpec.describe Harnas::Ingestors::Anthropic do
@@ -37,7 +38,7 @@ RSpec.describe Harnas::Ingestors::Anthropic do
       payload = events.first[:payload]
       expect(payload[:text]).to eq("Hello")
       expect(payload[:stop_reason]).to eq(:end_turn)
-      expect(payload[:usage]).to eq({ input_tokens: 12, output_tokens: 4 })
+      expect(payload[:usage]).to eq(Harnas::Usage.normalize(text_only_response["usage"]))
     end
 
     it "normalizes the wire stop_reason vocabulary" do
@@ -61,7 +62,7 @@ RSpec.describe Harnas::Ingestors::Anthropic do
     it "defaults missing usage fields to 0" do
       response = text_only_response.merge("usage" => {})
       expect(ingestor.call(response).first[:payload][:usage])
-        .to eq({ input_tokens: 0, output_tokens: 0 })
+        .to eq(Harnas::Usage.normalize({}))
     end
   end
 
