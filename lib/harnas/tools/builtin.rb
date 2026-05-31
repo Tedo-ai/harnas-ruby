@@ -42,6 +42,7 @@ module Harnas
       # single Hash argument (with symbol keys, per the Runner) and
       # returns a String.
       def self.handlers
+        bash_sessions = BashSessionRegistry.new
         {
           "harnas.builtin.read_file" => method(:read_file),
           "harnas.builtin.write_file" => method(:write_file),
@@ -53,7 +54,7 @@ module Harnas
           "harnas.builtin.fetch_url" => method(:fetch_url),
           "harnas.builtin.spawn_agent" => method(:spawn_agent),
           "harnas.builtin.load_skill" => method(:load_skill),
-          "harnas.builtin.bash_session" => bash_session_registry.method(:call)
+          "harnas.builtin.bash_session" => bash_sessions.method(:call)
         }
       end
 
@@ -385,11 +386,6 @@ module Harnas
       DEFAULT_BASH_SESSION_MAX_OUTPUT_BYTES = 64 * 1024
       ANSI_PATTERN = /\e\[[0-9;]*[mGKHF]|\r/
       ENV_NAME_PATTERN = /\A[A-Za-z_][A-Za-z0-9_]*\z/
-
-      def self.bash_session_registry
-        @bash_session_registry ||= BashSessionRegistry.new
-      end
-      private_class_method :bash_session_registry
 
       def self.default_bash_session_shell_type
         return "posix" unless Gem.win_platform?

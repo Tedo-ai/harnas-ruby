@@ -7,6 +7,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and Harnas adheres to [Semantic Versioning](https://semver.org/) on
 the specification as a whole.
 
+## [0.19.3] — 2026-06-01
+
+### Changed
+
+- Lockstep spec patch release. Validated against fixtures version
+  `0.19.3`: 70/70.
+- Conformance runner now honors `isolation.json` repeat checks so a
+  fixture can assert that multiple Sessions run in one process without
+  leaking mutable state.
+- Scoped the built-in `bash_session` registry to each built-in handler
+  bundle instead of one process-global registry.
+- Bumped gem metadata and MCP client version to 0.19.3.
+
 ## [0.19.2] — 2026-06-01
 
 ### Changed
@@ -587,6 +600,7 @@ Carryovers and deferred decisions, captured for posterity:
   wrapping, which covers most cases — the lifecycle mixin would
   be motivated by a concrete use case we haven't found yet.
 
+[0.19.3]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.19.3
 [0.19.2]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.19.2
 [0.19.1]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.19.1
 [0.19.0]: https://github.com/Tedo-ai/harnas-ruby/releases/tag/v0.19.0

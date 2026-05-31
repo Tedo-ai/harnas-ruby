@@ -105,6 +105,7 @@ module Harnas
           )
         end
         diff ||= credential_proxy_secret_diff(actual, dir)
+        diff ||= isolation_repeat_diff(dir, manifest, script, inputs, streaming, expected)
         Result.new(
           fixture: File.basename(dir),
           passed: diff.nil?,
@@ -114,6 +115,26 @@ module Harnas
         )
       end
       # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
+
+      def self.isolation_repeat_diff(dir, manifest, script, inputs, streaming, expected)
+        path = File.join(dir, "isolation.json")
+        return nil unless File.exist?(path)
+
+        repeat = JSON.parse(File.read(path)).fetch("repeat", 1).to_i
+        return nil if repeat < 2
+
+        (2..repeat).each do |index|
+          actual, = Dir.chdir(dir) do
+            run_agent_with_sidecars(
+              manifest, script, inputs, streaming: streaming,
+                                        attachment_store: load_attachment_store(".")
+            )
+          end
+          diff = first_mismatch(actual, expected)
+          return { at_seq: "repeat #{index}", actual: diff, expected: nil } unless diff.nil?
+        end
+        nil
+      end
 
       def self.run_projection_fixture(dir)
         sessions, root = load_fixture_sessions(File.join(dir, "sessions"))
