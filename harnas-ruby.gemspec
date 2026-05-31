@@ -2,7 +2,7 @@
 
 Gem::Specification.new do |spec|
   spec.name = "harnas-ruby"
-  spec.version = "0.19.1"
+  spec.version = "0.19.2"
   spec.authors = ["René van Pelt"]
   spec.email = ["contact@renevanpe.lt"]
 
