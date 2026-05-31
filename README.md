@@ -1,11 +1,11 @@
 # harnas-ruby
 
 Ruby reference implementation of [Harnas](https://github.com/Tedo-ai/harnas) —
-a specification for LLM agent harnesses. Passes 65/65 conformance fixtures
+a specification for LLM agent harnesses. Passes 66/66 conformance fixtures
 against the spec; live providers Anthropic + OpenAI + Gemini + Ollama; 696 RSpec
 examples; rubocop clean.
 
-**Version 0.19.0** (2026-05-24). Tracks Harnas spec 0.19.0.
+**Version 0.19.1** (2026-05-31). Tracks Harnas spec 0.19.1.
 
 ## What's in here
 
