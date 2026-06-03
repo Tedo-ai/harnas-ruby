@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "json"
 require "harnas/session"
 
 RSpec.describe Harnas::Session do
@@ -209,9 +210,9 @@ RSpec.describe Harnas::Session do
       Tempfile.create(["harnas-session", ".jsonl"]) do |f|
         f.write <<~JSONL
           {"__session__":true,"id":"ses_test","metadata":{}}
-          {"seq":0,"id":"evt_0","timestamp":"2026-06-01T00:00:00Z","type":"user_message","payload":{"text":"a"}}
+          #{event_row(seq: 0, id: "evt_0", text: "a")}
         JSONL
-        f.write '{"seq":1,"id":"evt_1","timestamp":"2026-06-01T00:00:01Z","type":"user_message","payload":{"text":"b"}'
+        f.write event_row(seq: 1, id: "evt_1", text: "b")[0...-1]
         f.close
 
         expect { Harnas::Session.load(f.path) }
@@ -222,16 +223,16 @@ RSpec.describe Harnas::Session do
     it "rejects duplicate, gapped, and reordered event seq rows" do
       rows = {
         "duplicate" => [
-          '{"seq":0,"id":"evt_0","timestamp":"2026-06-01T00:00:00Z","type":"user_message","payload":{"text":"a"}}',
-          '{"seq":0,"id":"evt_dup","timestamp":"2026-06-01T00:00:01Z","type":"user_message","payload":{"text":"b"}}'
+          event_row(seq: 0, id: "evt_0", text: "a"),
+          event_row(seq: 0, id: "evt_dup", text: "b")
         ],
         "gapped" => [
-          '{"seq":0,"id":"evt_0","timestamp":"2026-06-01T00:00:00Z","type":"user_message","payload":{"text":"a"}}',
-          '{"seq":2,"id":"evt_2","timestamp":"2026-06-01T00:00:01Z","type":"user_message","payload":{"text":"b"}}'
+          event_row(seq: 0, id: "evt_0", text: "a"),
+          event_row(seq: 2, id: "evt_2", text: "b")
         ],
         "reordered" => [
-          '{"seq":1,"id":"evt_1","timestamp":"2026-06-01T00:00:00Z","type":"user_message","payload":{"text":"a"}}',
-          '{"seq":0,"id":"evt_0","timestamp":"2026-06-01T00:00:01Z","type":"user_message","payload":{"text":"b"}}'
+          event_row(seq: 1, id: "evt_1", text: "a"),
+          event_row(seq: 0, id: "evt_0", text: "b")
         ]
       }
 
@@ -259,5 +260,15 @@ RSpec.describe Harnas::Session do
       expect(loaded.id).to eq("ses_io")
       expect(loaded.log.size).to eq(1)
     end
+  end
+
+  def event_row(seq:, id:, text:)
+    JSON.generate(
+      seq: seq,
+      id: id,
+      timestamp: format("2026-06-01T00:00:%02dZ", seq),
+      type: "user_message",
+      payload: { text: text }
+    )
   end
 end
