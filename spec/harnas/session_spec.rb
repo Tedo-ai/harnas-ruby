@@ -205,6 +205,48 @@ RSpec.describe Harnas::Session do
       end
     end
 
+    it "fails loudly on a torn final event row" do
+      Tempfile.create(["harnas-session", ".jsonl"]) do |f|
+        f.write <<~JSONL
+          {"__session__":true,"id":"ses_test","metadata":{}}
+          {"seq":0,"id":"evt_0","timestamp":"2026-06-01T00:00:00Z","type":"user_message","payload":{"text":"a"}}
+        JSONL
+        f.write '{"seq":1,"id":"evt_1","timestamp":"2026-06-01T00:00:01Z","type":"user_message","payload":{"text":"b"}'
+        f.close
+
+        expect { Harnas::Session.load(f.path) }
+          .to raise_error(JSON::ParserError)
+      end
+    end
+
+    it "rejects duplicate, gapped, and reordered event seq rows" do
+      rows = {
+        "duplicate" => [
+          '{"seq":0,"id":"evt_0","timestamp":"2026-06-01T00:00:00Z","type":"user_message","payload":{"text":"a"}}',
+          '{"seq":0,"id":"evt_dup","timestamp":"2026-06-01T00:00:01Z","type":"user_message","payload":{"text":"b"}}'
+        ],
+        "gapped" => [
+          '{"seq":0,"id":"evt_0","timestamp":"2026-06-01T00:00:00Z","type":"user_message","payload":{"text":"a"}}',
+          '{"seq":2,"id":"evt_2","timestamp":"2026-06-01T00:00:01Z","type":"user_message","payload":{"text":"b"}}'
+        ],
+        "reordered" => [
+          '{"seq":1,"id":"evt_1","timestamp":"2026-06-01T00:00:00Z","type":"user_message","payload":{"text":"a"}}',
+          '{"seq":0,"id":"evt_0","timestamp":"2026-06-01T00:00:01Z","type":"user_message","payload":{"text":"b"}}'
+        ]
+      }
+
+      rows.each_value do |event_rows|
+        Tempfile.create(["harnas-session", ".jsonl"]) do |f|
+          f.puts '{"__session__":true,"id":"ses_test","metadata":{}}'
+          event_rows.each { |row| f.puts row }
+          f.close
+
+          expect { Harnas::Session.load(f.path) }
+            .to raise_error(ArgumentError, /invalid event seq/)
+        end
+      end
+    end
+
     it "accepts a StringIO on save and load" do
       session = described_class.new(id: "ses_io")
       session.log.append(type: :user_message, payload: { text: "hi" })

@@ -122,6 +122,11 @@ module Harnas
     def restore(row)
       type    = row.fetch(:type).to_sym
       payload = restore_payload(type, row.fetch(:payload))
+      expected_seq = @events.size
+      actual_seq = row.fetch(:seq)
+      unless actual_seq == expected_seq
+        raise ArgumentError, "invalid event seq at row #{expected_seq}: got #{actual_seq}, want #{expected_seq}"
+      end
       event   = Event.new(seq: row.fetch(:seq), id: row.fetch(:id),
                           timestamp: row[:timestamp],
                           type: type, payload: payload)
