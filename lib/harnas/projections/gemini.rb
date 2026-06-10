@@ -26,6 +26,8 @@ module Harnas
     # Harnas::Mutations.apply; :summary events produced by compaction
     # render as user-role messages.
     class Gemini
+      attr_reader :provider_kind
+
       THOUGHT_SIGNATURE_KIND = "gemini.thought_signature"
 
       # `thinking_budget: 0` tells Gemini not to enter thinking mode;

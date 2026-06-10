@@ -25,6 +25,8 @@ module Harnas
     # An assistant turn that only emits tool_use (no text) becomes
     # `{ role: "assistant", content: null, tool_calls: [...] }`.
     class OpenAI
+      attr_reader :provider_kind
+
       def initialize(model:, registry: nil, system: nil, attachment_store: nil,
                      provider_kind: "openai", capabilities: {},
                      capability_mismatch_behavior: "metadata_fallback")

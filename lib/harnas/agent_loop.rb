@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "set"
-
 require "harnas/hooks"
 require "harnas/capabilities"
 require "harnas/observation"
@@ -275,7 +273,7 @@ module Harnas
         :post_tool_use,
         session: @session,
         tool_use: tool_use_event,
-        tool_result: @latest_tool_results[tool_use_event.payload[:id]],
+        tool_result: @latest_tool_results[payload_value(tool_use_event, :id)],
         denied: !denied.nil?
       )
     end
@@ -295,15 +293,15 @@ module Harnas
     end
 
     def pending_tool_uses
-      pending = []
+      candidates = []
       scan_new_events do |event|
         if event.type == :tool_result
           remember_tool_result(event)
-        elsif event.type == :tool_use && !@fulfilled_tool_use_ids.include?(event.payload[:id])
-          pending << event
+        elsif event.type == :tool_use
+          candidates << event
         end
       end
-      pending
+      candidates.reject { |event| @fulfilled_tool_use_ids.include?(payload_value(event, :id)) }
     end
 
     def remember_new_tool_results
@@ -319,11 +317,15 @@ module Harnas
     end
 
     def remember_tool_result(event)
-      tool_use_id = event.payload[:tool_use_id]
+      tool_use_id = payload_value(event, :tool_use_id)
       return if tool_use_id.nil?
 
       @fulfilled_tool_use_ids << tool_use_id
       @latest_tool_results[tool_use_id] = event
+    end
+
+    def payload_value(event, key)
+      event.payload[key] || event.payload[key.to_s]
     end
 
     def append_denial(tool_use_event, reason)

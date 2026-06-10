@@ -20,6 +20,8 @@ module Harnas
     # the legacy plain-string form so simple wire bodies stay simple
     # (and recorded text-only fixtures continue to match byte-for-byte).
     class Anthropic
+      attr_reader :provider_kind
+
       DEFAULT_MAX_TOKENS = 1024
 
       def initialize(model:, max_tokens: DEFAULT_MAX_TOKENS, registry: nil, system: nil, # rubocop:disable Metrics/ParameterLists
