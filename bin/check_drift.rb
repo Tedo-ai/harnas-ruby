@@ -10,7 +10,7 @@ def fail!(message)
 end
 
 def spec_root
-  explicit = ENV["HARNAS_SPEC"]
+  explicit = ENV.fetch("HARNAS_SPEC", nil)
   return explicit if explicit && File.directory?(explicit)
 
   sibling = File.expand_path("../../harnas", __dir__)
@@ -39,15 +39,25 @@ gemspec = File.read(File.join(ROOT, "harnas-ruby.gemspec"))
 gem_version = gemspec[/spec\.version\s*=\s*"([^"]+)"/, 1] || fail!("could not read gemspec version")
 fields = version_fields(spec_root)
 spec_version = fields.fetch("harnas_version") { fail!("spec VERSION has no harnas_version") }
-fixtures_version = fields.fetch("fixtures_version") { fail!("spec VERSION has no fixtures_version") }
+fixtures_version = fields.fetch("fixtures_version") do
+  fail!("spec VERSION has no fixtures_version")
+end
 count = fixture_count(spec_root)
 readme = File.read(File.join(ROOT, "README.md"))
 
-fail!("gem version #{gem_version} does not match spec #{spec_version}") unless gem_version == spec_version
+if gem_version != spec_version
+  fail!("gem version #{gem_version} does not match spec #{spec_version}")
+end
 fail!("README missing Version #{gem_version}") unless readme.include?("**Version #{gem_version}**")
-fail!("README missing spec #{spec_version}") unless readme.include?("Tracks Harnas spec #{spec_version}")
-fail!("README missing #{count}/#{count} conformance claim") unless readme.include?("Passes #{count}/#{count} conformance fixtures")
-fail!("README conformance command comment is stale") unless readme.include?("bundle exec bin/conformance.rb  # #{count}/#{count} fixtures")
+unless readme.include?("Tracks Harnas spec #{spec_version}")
+  fail!("README missing spec #{spec_version}")
+end
+unless readme.include?("Passes #{count}/#{count} conformance fixtures")
+  fail!("README missing #{count}/#{count} conformance claim")
+end
+unless readme.include?("bundle exec bin/conformance.rb  # #{count}/#{count} fixtures")
+  fail!("README conformance command comment is stale")
+end
 
 %w[0.19.3 70/70 65/65].each do |stale|
   fail!("README contains stale #{stale}") if readme.include?(stale)
