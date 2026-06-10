@@ -331,6 +331,16 @@ RSpec.describe Harnas::Tools::Builtin do
       expect(result).to include("[exit 7]")
     end
 
+    it "drains large output while the command is still running" do
+      result = described_class.run_shell(
+        command: "ruby -e 'STDOUT.write(%(x) * 300_000)'",
+        timeout_seconds: 5
+      )
+
+      expect(result).to include("[exit 0]")
+      expect(result).to include("x" * 1024)
+    end
+
     it "raises when the command runs longer than the timeout" do
       expect do
         described_class.run_shell(command: "sleep 5", timeout_seconds: 1)
