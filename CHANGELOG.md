@@ -13,6 +13,8 @@ the specification as a whole.
 
 - Added conformance replay support for malformed streaming provider
   frames. Validated against the expanded 71-fixture spec set.
+- Added a README drift check that compares public version and fixture-count
+  claims with gem metadata and the checked-out spec.
 
 ## [0.19.4] — 2026-06-03
 
