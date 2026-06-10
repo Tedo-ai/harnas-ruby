@@ -23,4 +23,12 @@ RSpec.describe Harnas::Conformance::Runner do
       end
     end
   end
+
+  it "rejects oracle logs with extra actual payload fields" do
+    oracle_dir = HarnasSpecPaths.conformance_oracle("strict-diff-extra-payload-field")
+    actual = described_class.load_expected(File.join(oracle_dir, "actual-log.jsonl"))
+    expected = described_class.load_expected(File.join(oracle_dir, "expected-log.jsonl"))
+
+    expect(described_class.first_mismatch(actual, expected)).not_to be_nil
+  end
 end

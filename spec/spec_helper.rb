@@ -21,8 +21,16 @@ module HarnasSpecPaths
     File.join(spec_root, "conformance", "fixtures", *parts.map(&:to_s))
   end
 
+  def self.conformance_oracle(*parts)
+    File.join(spec_root, "conformance", "oracle-corpus", *parts.map(&:to_s))
+  end
+
   def harnas_conformance_fixture(*parts)
     HarnasSpecPaths.conformance_fixture(*parts)
+  end
+
+  def harnas_conformance_oracle(*parts)
+    HarnasSpecPaths.conformance_oracle(*parts)
   end
 end
 
