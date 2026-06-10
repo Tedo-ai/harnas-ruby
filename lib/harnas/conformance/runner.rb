@@ -642,29 +642,7 @@ module Harnas
 
         actual = actual.dup
         actual.delete("timestamp") unless expected.key?("timestamp")
-        if actual["payload"].is_a?(Hash) && expected["payload"].is_a?(Hash)
-          actual["payload"] = filter_payload_for_expected(actual["payload"], expected["payload"])
-        end
         actual
-      end
-
-      def self.filter_payload_for_expected(actual, expected)
-        filtered = actual.select { |key, _| expected.key?(key) }
-        if expected["usage"].is_a?(Hash) && actual["usage"].is_a?(Hash)
-          filtered["usage"] = filter_map_for_expected(actual["usage"], expected["usage"])
-        end
-        filtered
-      end
-
-      def self.filter_map_for_expected(actual, expected)
-        expected.each_with_object({}) do |(key, expected_value), out|
-          actual_value = actual[key]
-          out[key] = if expected_value.is_a?(Hash) && actual_value.is_a?(Hash)
-                       filter_map_for_expected(actual_value, expected_value)
-                     else
-                       actual_value
-                     end
-        end
       end
 
       def self.contains_generated_wildcard?(value)
