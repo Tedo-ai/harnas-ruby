@@ -11,8 +11,9 @@ module Harnas
         @streams = streams.dup
       end
 
-      def call(_request)
+      def call(request)
         stream = @streams.shift or raise Exhausted, "no more scripted streams"
+        stream = unwrap_expected_stream(stream, request) if stream.is_a?(Hash) && stream.key?("expect_request")
         stream.each do |event|
           if event.key?("error")
             yield failed_event(event.fetch("error"))
@@ -28,6 +29,30 @@ module Harnas
       end
 
       private
+
+      def unwrap_expected_stream(entry, request)
+        expected = entry.fetch("expect_request")
+        actual = normalize(request)
+        unless actual == normalize(expected)
+          message = "request does not match expected: #{actual.inspect} != " \
+                    "#{normalize(expected).inspect}"
+          raise Harnas::Providers::FixtureError, message
+        end
+        entry.fetch("response")
+      end
+
+      def normalize(value)
+        case value
+        when Hash
+          value.each_with_object({}) { |(k, v), h| h[k.to_s] = normalize(v) }
+        when Array
+          value.map { |v| normalize(v) }
+        when Symbol
+          value.to_s
+        else
+          value
+        end
+      end
 
       def failed_event(error)
         {
