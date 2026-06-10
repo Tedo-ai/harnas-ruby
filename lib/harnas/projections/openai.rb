@@ -139,7 +139,7 @@ module Harnas
           type: "function",
           function: {
             name: evt.payload[:name],
-            arguments: JSON.generate(evt.payload[:arguments] || {})
+            arguments: canonical_json(evt.payload[:arguments] || {})
           }
         }
 
@@ -165,6 +165,24 @@ module Harnas
               parameters: t.input_schema
             }
           }
+        end
+      end
+
+      def canonical_json(value)
+        JSON.generate(canonical_json_value(value))
+      end
+
+      def canonical_json_value(value)
+        case value
+        when Hash
+          value.keys.map(&:to_s).sort.each_with_object({}) do |key, out|
+            source_key = value.key?(key) ? key : key.to_sym
+            out[key] = canonical_json_value(value[source_key])
+          end
+        when Array
+          value.map { |item| canonical_json_value(item) }
+        else
+          value
         end
       end
     end

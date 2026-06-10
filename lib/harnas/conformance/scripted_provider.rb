@@ -52,9 +52,10 @@ module Harnas
       def unwrap_expected_response(entry, request)
         expected = entry.fetch("expect_request")
         actual   = normalize(request)
-        unless actual == normalize(expected)
+        normalized_expected = normalize(expected)
+        unless request_value_equal?(actual, normalized_expected)
           message = "request does not match expected: #{actual.inspect} != " \
-                    "#{normalize(expected).inspect}"
+                    "#{normalized_expected.inspect}"
           raise Harnas::Providers::FixtureError,
                 message
         end
@@ -71,6 +72,21 @@ module Harnas
           value.to_s
         else
           value
+        end
+      end
+
+      def request_value_equal?(actual, expected)
+        return !actual.nil? && actual != "" if expected == "<generated>"
+
+        if actual.is_a?(Hash) && expected.is_a?(Hash)
+          return false unless actual.keys.sort == expected.keys.sort
+
+          expected.all? { |key, value| request_value_equal?(actual[key], value) }
+        elsif actual.is_a?(Array) && expected.is_a?(Array)
+          actual.length == expected.length &&
+            actual.zip(expected).all? { |left, right| request_value_equal?(left, right) }
+        else
+          actual == expected
         end
       end
 

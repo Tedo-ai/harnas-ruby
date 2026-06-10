@@ -46,6 +46,7 @@ module Harnas
       @max_turns       = max_turns
       @retry_policy    = retry_policy || Harnas::Providers::RetryPolicy.new
       @on_stream_event = on_stream_event
+      @current_request = {}
     end
 
     # rubocop:disable Metrics/BlockLength, Metrics/MethodLength
@@ -163,8 +164,13 @@ module Harnas
 
     def run_streaming_turn(request)
       @session.hooks.invoke(:pre_provider_call, session: @session, request: request)
-      @stream_provider.call(request) do |event|
-        handle_stream_event(event)
+      @current_request = request
+      begin
+        @stream_provider.call(request) do |event|
+          handle_stream_event(event)
+        end
+      ensure
+        @current_request = {}
       end
       @session.hooks.invoke(:post_provider_call, session: @session, response: nil)
     end
@@ -176,7 +182,7 @@ module Harnas
         @session.observation.emit(:stream_event, event: observed)
         @on_stream_event&.call(observed) if STREAM_DELTA_TYPES.include?(type)
       else
-        stamp_assistant_identity!(event, {})
+        stamp_assistant_identity!(event, @current_request)
         @session.log.append(**event)
       end
     end
@@ -185,7 +191,7 @@ module Harnas
       return unless event[:type] == :assistant_message
 
       payload = event[:payload]
-      payload[:provider] ||= provider_kind_for_error.to_s unless provider_kind_for_error == :unknown
+      payload[:provider] ||= provider_kind_for_error.to_s
       payload[:model] ||= request[:model] || request["model"]
       payload[:usage] = Harnas::Usage.normalize(payload[:usage] || {})
     end
