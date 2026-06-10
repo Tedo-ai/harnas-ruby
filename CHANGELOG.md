@@ -12,9 +12,11 @@ the specification as a whole.
 ### Changed
 
 - Added conformance replay support for malformed streaming provider
-  frames. Validated against the expanded 71-fixture spec set.
+  frames. Validated against the expanded fixture set.
 - Added a README drift check that compares public version and fixture-count
   claims with gem metadata and the checked-out spec.
+- Added conformance aliases for the MarkerTail, hook, and fork canary
+  fixtures. Validated against the expanded 75-fixture spec set.
 
 ## [0.19.4] — 2026-06-03
 

@@ -570,7 +570,7 @@ module Harnas
       def self.conformance_hook_handlers
         Hash.new do |_, name|
           case name
-          when "conformance.audit_post_tool_use"
+          when "conformance.audit_post_tool_use", "conformance.audit_post_tool_use_variant"
             lambda do |session:, tool_use:, tool_result:, **_|
               session.log.append(
                 type: :annotation,
@@ -583,7 +583,7 @@ module Harnas
                 }
               )
             end
-          when "conformance.raise_hook"
+          when "conformance.raise_hook", "conformance.raise_hook_variant"
             ->(**_) { raise "conformance hook failure" }
           else
             raise Harnas::Manifest::UnresolvedHandlerError,
