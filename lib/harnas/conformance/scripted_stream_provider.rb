@@ -13,7 +13,9 @@ module Harnas
 
       def call(request)
         stream = @streams.shift or raise Exhausted, "no more scripted streams"
-        stream = unwrap_expected_stream(stream, request) if stream.is_a?(Hash) && stream.key?("expect_request")
+        if stream.is_a?(Hash) && stream.key?("expect_request")
+          stream = unwrap_expected_stream(stream, request)
+        end
         stream.each do |event|
           if event.key?("error")
             yield failed_event(event.fetch("error"))
