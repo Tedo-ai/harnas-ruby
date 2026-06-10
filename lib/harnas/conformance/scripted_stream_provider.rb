@@ -18,6 +18,10 @@ module Harnas
             yield failed_event(event.fetch("error"))
             raise_error(event.fetch("error"))
           end
+          if event.key?("malformed_frame")
+            yield failed_event(event.fetch("malformed_frame"))
+            raise_malformed_frame(event.fetch("malformed_frame"))
+          end
 
           yield normalize_event(event)
         end
@@ -40,6 +44,10 @@ module Harnas
           error.fetch("status"),
           error.fetch("body")
         )
+      end
+
+      def raise_malformed_frame(error)
+        raise Harnas::Providers::Error, error.fetch("message")
       end
 
       def normalize_event(event)

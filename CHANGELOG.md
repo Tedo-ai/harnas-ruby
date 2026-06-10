@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and Harnas adheres to [Semantic Versioning](https://semver.org/) on
 the specification as a whole.
 
+## [Unreleased]
+
+### Changed
+
+- Added conformance replay support for malformed streaming provider
+  frames. Validated against the expanded 71-fixture spec set.
+
 ## [0.19.4] — 2026-06-03
 
 ### Changed
