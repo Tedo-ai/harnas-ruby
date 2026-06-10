@@ -36,7 +36,13 @@ module Harnas
           raw_url = tool_use.payload.dig(:arguments, :url) ||
                     tool_use.payload.dig(:arguments, "url")
           host = parse_host(raw_url)
-          return Harnas::Actions::Allow.call unless host
+          unless host
+            @consecutive_violations += 1
+            abort_after_limit!(session) if @consecutive_violations >= 3
+            return Harnas::Actions::Refuse.call(
+              reason: "Network call has an unparseable URL and is not permitted."
+            )
+          end
 
           if @allow.include?(host) && !@deny.include?(host)
             @consecutive_violations = 0

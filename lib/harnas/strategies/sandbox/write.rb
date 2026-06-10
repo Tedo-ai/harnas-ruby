@@ -60,7 +60,18 @@ module Harnas
         def normalize(value)
           path = Pathname.new(value.to_s)
           path = Pathname.pwd.join(path) unless path.absolute?
-          path.cleanpath.to_s
+          realpath_with_missing_leaf(path.cleanpath)
+        end
+
+        def realpath_with_missing_leaf(path)
+          return path.realpath.to_s if path.exist?
+
+          parent = path.parent
+          return parent.realpath.join(path.basename).to_s if parent.exist?
+
+          path.to_s
+        rescue Errno::ENOENT
+          path.to_s
         end
 
         def denied?(path)

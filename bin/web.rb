@@ -10,8 +10,9 @@
 # drive a Harnas::AgentLoop turn in a background worker thread.
 #
 # Usage:
-#   bundle exec bin/web.rb [--port PORT] [--mock] [--no-stream]
+#   bundle exec bin/web.rb [--host HOST] [--port PORT] [--mock] [--no-stream]
 #
+#   --host HOST     listen on HOST (default: 127.0.0.1)
 #   --port PORT     listen on PORT (default: 4567)
 #   --mock          use a deterministic CannedProvider instead of Anthropic
 #   --no-stream     use the buffered Anthropic provider, not streaming
@@ -75,15 +76,28 @@ require "harnas/strategies/compaction/summary_tail"
 require "harnas/strategies/compaction/token_marker_tail"
 require "harnas/strategies/compaction/tool_output_cap"
 require "harnas/strategies/permission/human_approval"
+require "harnas/web/security"
 require "harnas/hooks"
 require "harnas/observation"
 
 Faye::WebSocket.load_adapter("puma")
 
-options = { port: 4567, mock: false, stream: true, provider: nil }
+options = {
+  host: "127.0.0.1",
+  port: 4567,
+  mock: false,
+  stream: true,
+  provider: nil,
+  auth_token: ENV.fetch("HARNAS_WEB_AUTH_TOKEN", "")
+}
 OptionParser.new do |opts|
-  opts.banner = "usage: bin/web.rb [--port PORT] [--provider KIND] [--mock] [--no-stream]"
+  opts.banner = "usage: bin/web.rb [--host HOST] [--port PORT] " \
+                "[--provider KIND] [--mock] [--no-stream]"
+  opts.on("--host HOST", "Listen host (default: 127.0.0.1)") { |host| options[:host] = host }
   opts.on("--port PORT", Integer) { |p| options[:port] = p }
+  opts.on("--auth-token TOKEN", "Required when binding to a non-loopback host") do |token|
+    options[:auth_token] = token
+  end
   opts.on("--provider KIND", %w[anthropic openai gemini mock],
           "Starting provider. Unspecified = first available (mock/anthropic/openai/gemini).") do |p|
     options[:provider] = p.to_sym
@@ -99,6 +113,8 @@ OptionParser.new do |opts|
     exit
   end
 end.parse!
+
+Harnas::Web::Security.require_auth_token!(options[:host], options[:auth_token])
 
 # ──────────────────────────────────────────────────────────────────────
 # Bridge: a thread-safe broadcaster that fans Observation events out to
@@ -761,6 +777,10 @@ def serve_web_asset(path)
 end
 
 APP = lambda do |env|
+  unless Harnas::Web::Security.authorized_request?(env, options[:auth_token])
+    next Harnas::Web::Security.unauthorized_response
+  end
+
   if Faye::WebSocket.websocket?(env)
     ws = Faye::WebSocket.new(env)
 
@@ -999,7 +1019,8 @@ puts "  Harnas Web"
 puts "  Providers: #{TRIPLETS.keys.join(", ")}"
 puts "  Starting:  #{initial[:label]} (#{initial[:model]})"
 puts "  Session:   #{shared_session.id}"
-puts "  URL:       http://localhost:#{options[:port]}/"
+puts "  URL:       http://#{options[:host]}:#{options[:port]}/"
+puts "  Auth:      bearer token required" unless options[:auth_token].to_s.empty?
 puts ""
 puts "  Open the URL in a browser. Type messages; switch providers"
 puts "  from the header dropdown to use the same Log with a different"
@@ -1007,7 +1028,7 @@ puts "  model on the next turn. Stop with Ctrl-C."
 puts ""
 
 config = Puma::Configuration.new do |c|
-  c.bind "tcp://0.0.0.0:#{options[:port]}"
+  c.bind "tcp://#{options[:host]}:#{options[:port]}"
   c.app APP
   c.threads 1, 8
   # Don't hang waiting for in-flight WebSocket connections to drain on shutdown.
