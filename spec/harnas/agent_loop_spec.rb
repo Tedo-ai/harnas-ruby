@@ -418,13 +418,18 @@ RSpec.describe Harnas::AgentLoop do
       expect(errors.first.payload[:status]).to eq(400)
     end
 
-    it "captures the provider class name as :anthropic / :openai / :gemini" do
+    it "uses the provider's explicit kind for provider_error events" do
       stub_provider = Class.new do
+        attr_reader :kind
+
+        def initialize
+          @kind = :openai
+        end
+
         define_method(:call) do |_req|
           raise Harnas::Providers::HTTPError.new(400, "x")
         end
       end
-      stub_const("Harnas::Providers::Anthropic", stub_provider)
 
       provider = stub_provider.new
       runner = described_class.new(
@@ -435,7 +440,7 @@ RSpec.describe Harnas::AgentLoop do
       runner.run
 
       err = session.log.find { |e| e.type == :provider_error }
-      expect(err.payload[:provider]).to eq(:anthropic)
+      expect(err.payload[:provider]).to eq(:openai)
     end
   end
 end
