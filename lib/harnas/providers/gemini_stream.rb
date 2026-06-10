@@ -25,6 +25,8 @@ module Harnas
     # with no :tool_use_argument_delta in between — still matches the
     # canonical sequence.
     class GeminiStream
+      attr_reader :kind
+
       ENDPOINT_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
       ACTION = "streamGenerateContent"
 
@@ -38,6 +40,7 @@ module Harnas
 
       def initialize(api_key:)
         @api_key = api_key
+        @kind = :gemini
       end
 
       def call(request, &block)

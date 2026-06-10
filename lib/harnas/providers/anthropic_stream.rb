@@ -24,6 +24,8 @@ module Harnas
     # non-streaming :assistant_message and :tool_use Events (S5) so
     # Projections can remain ignorant of the stream.
     class AnthropicStream
+      attr_reader :kind
+
       STOP_REASON_MAP = {
         "end_turn" => :end_turn,
         "max_tokens" => :max_tokens,
@@ -35,6 +37,7 @@ module Harnas
       def initialize(api_key:, api_version: "2023-06-01")
         @api_key      = api_key
         @api_version  = api_version
+        @kind = :anthropic
       end
 
       def call(request, &block)

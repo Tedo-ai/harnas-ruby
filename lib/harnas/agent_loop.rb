@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "set"
+
 require "harnas/hooks"
 require "harnas/capabilities"
 require "harnas/observation"
@@ -47,6 +49,9 @@ module Harnas
       @retry_policy    = retry_policy || Harnas::Providers::RetryPolicy.new
       @on_stream_event = on_stream_event
       @current_request = {}
+      @event_scan_index = 0
+      @fulfilled_tool_use_ids = Set.new
+      @latest_tool_results = {}
     end
 
     # rubocop:disable Metrics/BlockLength, Metrics/MethodLength
@@ -227,22 +232,19 @@ module Harnas
     end
 
     def projection_kind_for_error
-      class_name = @projection.class.name.to_s
-      if    class_name.include?("Anthropic") then "anthropic"
-      elsif class_name.include?("OpenAI")    then "openai"
-      elsif class_name.include?("Gemini")    then "gemini"
-      else  "unknown"
-      end
+      explicit_kind(@projection)
     end
 
     def provider_kind_for_error
-      live = @stream_provider || @provider
-      class_name = live.class.name.to_s
-      if    class_name.include?("Anthropic") then :anthropic
-      elsif class_name.include?("OpenAI")    then :openai
-      elsif class_name.include?("Gemini")    then :gemini
-      else  :unknown
-      end
+      explicit_kind(@stream_provider || @provider).to_sym
+    end
+
+    def explicit_kind(object)
+      return "unknown" unless object
+
+      kind = object.respond_to?(:provider_kind) ? object.provider_kind : nil
+      kind = object.kind if (kind.nil? || kind.to_s.empty?) && object.respond_to?(:kind)
+      kind.to_s.empty? ? "unknown" : kind.to_s
     end
 
     def dispatch_pending_tools
@@ -267,12 +269,13 @@ module Harnas
                      into_log: @session.log,
                      session: @session)
       end
+      remember_new_tool_results
 
       @session.hooks.invoke(
         :post_tool_use,
         session: @session,
         tool_use: tool_use_event,
-        tool_result: matching_tool_result(tool_use_event),
+        tool_result: @latest_tool_results[tool_use_event.payload[:id]],
         denied: !denied.nil?
       )
     end
@@ -291,19 +294,36 @@ module Harnas
       )
     end
 
-    def matching_tool_result(tool_use_event)
-      @session.log.reverse_each.find do |e|
-        e.type == :tool_result && e.payload[:tool_use_id] == tool_use_event.payload[:id]
+    def pending_tool_uses
+      pending = []
+      scan_new_events do |event|
+        if event.type == :tool_result
+          remember_tool_result(event)
+        elsif event.type == :tool_use && !@fulfilled_tool_use_ids.include?(event.payload[:id])
+          pending << event
+        end
+      end
+      pending
+    end
+
+    def remember_new_tool_results
+      scan_new_events { |event| remember_tool_result(event) if event.type == :tool_result }
+    end
+
+    def scan_new_events
+      while @event_scan_index < @session.log.size
+        event = @session.log.at(@event_scan_index)
+        @event_scan_index += 1
+        yield event
       end
     end
 
-    def pending_tool_uses
-      fulfilled = @session.log.each_with_object(Set.new) do |e, set|
-        set << e.payload[:tool_use_id] if e.type == :tool_result
-      end
-      @session.log.select do |e|
-        e.type == :tool_use && !fulfilled.include?(e.payload[:id])
-      end
+    def remember_tool_result(event)
+      tool_use_id = event.payload[:tool_use_id]
+      return if tool_use_id.nil?
+
+      @fulfilled_tool_use_ids << tool_use_id
+      @latest_tool_results[tool_use_id] = event
     end
 
     def append_denial(tool_use_event, reason)

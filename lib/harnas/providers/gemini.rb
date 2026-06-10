@@ -15,12 +15,15 @@ module Harnas
     # This is the single shape divergence from Anthropic/OpenAI providers
     # and is documented normatively in spec/02-provider-contract.md.
     class Gemini
+      attr_reader :kind
+
       ENDPOINT_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
       ACTION = "generateContent"
 
       def initialize(api_key:, http: HTTPX)
         @api_key = api_key
         @http = http
+        @kind = :gemini
       end
 
       def call(request)

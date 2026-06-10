@@ -945,24 +945,42 @@ module Harnas
       private_class_method :format_grep_result
 
       def self.run_with_timeout(command, timeout)
-        out_buf = String.new
-        err_buf = String.new
-        status  = nil
+        status = nil
+        out_buf = +""
+        err_buf = +""
 
-        Open3.popen3(command) do |_stdin, stdout, stderr, wait_thread|
+        Open3.popen3(command, **shell_process_options) do |stdin, stdout, stderr, wait_thread|
+          stdin.close
+          out_reader = Thread.new { stdout.read.to_s }
+          err_reader = Thread.new { stderr.read.to_s }
           finished = wait_thread.join(timeout)
           if finished.nil?
-            Process.kill("KILL", wait_thread.pid)
+            terminate_shell_process(wait_thread.pid)
             raise "command timed out after #{timeout}s"
           end
-          out_buf << stdout.read.to_s
-          err_buf << stderr.read.to_s
+          out_buf << out_reader.value
+          err_buf << err_reader.value
           status = wait_thread.value
         end
 
         [out_buf, err_buf, status]
       end
       private_class_method :run_with_timeout
+
+      def self.shell_process_options
+        Gem.win_platform? ? {} : { pgroup: true }
+      end
+      private_class_method :shell_process_options
+
+      def self.terminate_shell_process(pid)
+        target = Gem.win_platform? ? pid : -pid
+        Process.kill("TERM", target)
+        sleep 0.1
+        Process.kill("KILL", target)
+      rescue Errno::ESRCH, Errno::EPERM
+        nil
+      end
+      private_class_method :terminate_shell_process
 
       def self.format_shell_result(stdout, stderr, status)
         exit_code = status.exitstatus

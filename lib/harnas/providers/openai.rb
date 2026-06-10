@@ -8,11 +8,14 @@ require_relative "../observation"
 module Harnas
   module Providers
     class OpenAI
+      attr_reader :kind
+
       ENDPOINT = "https://api.openai.com/v1/chat/completions"
 
       def initialize(api_key:, http: HTTPX)
         @api_key = api_key
         @http = http
+        @kind = :openai
       end
 
       def call(request)

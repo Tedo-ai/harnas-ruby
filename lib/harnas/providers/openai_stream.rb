@@ -22,6 +22,8 @@ module Harnas
     # then the consolidated :assistant_turn_completed +
     # :assistant_message + :tool_use Events (S5).
     class OpenAIStream
+      attr_reader :kind
+
       FINISH_REASON_MAP = {
         "stop" => :end_turn,
         "length" => :max_tokens,
@@ -35,6 +37,7 @@ module Harnas
         @api_key = api_key
         @endpoint = endpoint
         @authorization = authorization
+        @kind = :openai
       end
 
       def call(request, &block)

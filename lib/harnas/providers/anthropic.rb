@@ -8,6 +8,8 @@ require_relative "../observation"
 module Harnas
   module Providers
     class Anthropic
+      attr_reader :kind
+
       ENDPOINT = "https://api.anthropic.com/v1/messages"
       DEFAULT_API_VERSION = "2023-06-01"
 
@@ -15,6 +17,7 @@ module Harnas
         @api_key = api_key
         @api_version = api_version
         @http = http
+        @kind = :anthropic
       end
 
       def call(request)
