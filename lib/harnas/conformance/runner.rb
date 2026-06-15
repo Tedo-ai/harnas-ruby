@@ -450,6 +450,7 @@ module Harnas
           loop_kwargs[:provider] = scripted
           loop_kwargs[:ingestor] = loaded.ingestor
         end
+        loop_kwargs[:provider_kind] = loaded.provider_kind
         Harnas::AgentLoop.new(**loop_kwargs).run
         loaded.session.metadata[:tools] =
           Harnas::Tools::Snapshot.descriptors(loaded.registry)

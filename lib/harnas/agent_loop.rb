@@ -33,7 +33,7 @@ module Harnas
 
     def initialize(session:, projection:, runner: nil, max_turns: DEFAULT_MAX_TURNS, # rubocop:disable Metrics/ParameterLists
                    provider: nil, ingestor: nil, stream_provider: nil,
-                   retry_policy: nil, on_stream_event: nil)
+                   retry_policy: nil, on_stream_event: nil, provider_kind: nil)
       raise ArgumentError, "provide either stream_provider: or (provider: and ingestor:)" \
         if stream_provider.nil? && (provider.nil? || ingestor.nil?)
 
@@ -46,6 +46,7 @@ module Harnas
       @max_turns       = max_turns
       @retry_policy    = retry_policy || Harnas::Providers::RetryPolicy.new
       @on_stream_event = on_stream_event
+      @provider_kind   = provider_kind
       @current_request = {}
       @event_scan_index = 0
       @fulfilled_tool_use_ids = Set.new
@@ -194,7 +195,7 @@ module Harnas
       return unless event[:type] == :assistant_message
 
       payload = event[:payload]
-      payload[:provider] ||= provider_kind_for_error.to_s
+      payload[:provider] = provider_kind_for_error.to_s
       payload[:model] ||= request[:model] || request["model"]
       payload[:usage] = Harnas::Usage.normalize(payload[:usage] || {})
     end
@@ -234,6 +235,8 @@ module Harnas
     end
 
     def provider_kind_for_error
+      return @provider_kind.to_sym if @provider_kind && !@provider_kind.to_s.empty?
+
       explicit_kind(@stream_provider || @provider).to_sym
     end
 

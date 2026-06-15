@@ -93,7 +93,8 @@ module Harnas
         ingestor: provider_bundle[:ingestor],
         registry: registry,
         strategies: strategies,
-        hooks: hooks
+        hooks: hooks,
+        provider_kind: manifest["provider"]["kind"]
       )
     end
 
@@ -108,10 +109,10 @@ module Harnas
     # A prepared agent. Side-effect-free until #install_strategies! is called.
     class Loaded
       attr_reader :name, :session, :projection, :provider, :stream_provider, :ingestor,
-                  :registry, :strategies, :hooks
+                  :registry, :strategies, :hooks, :provider_kind
 
       def initialize(name:, session:, projection:, provider:, ingestor:, # rubocop:disable Metrics/ParameterLists
-                     registry:, strategies:, hooks: [], stream_provider: nil)
+                     registry:, strategies:, hooks: [], stream_provider: nil, provider_kind: nil)
         @name            = name
         @session         = session
         @projection      = projection
@@ -121,6 +122,7 @@ module Harnas
         @registry        = registry
         @strategies      = strategies
         @hooks           = hooks
+        @provider_kind   = provider_kind
       end
 
       # Install every manifest-declared strategy onto this Loaded Session.
@@ -147,7 +149,8 @@ module Harnas
           ingestor: @ingestor,
           registry: @registry,
           strategies: @strategies,
-          hooks: @hooks
+          hooks: @hooks,
+          provider_kind: @provider_kind
         )
       end
     end

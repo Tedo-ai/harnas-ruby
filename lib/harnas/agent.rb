@@ -82,6 +82,7 @@ module Harnas
         runner: @loaded.runner,
         provider: @loaded.provider,
         ingestor: @loaded.ingestor,
+        provider_kind: @loaded.provider_kind,
         max_turns: @max_turns
       ).run
 
@@ -106,6 +107,7 @@ module Harnas
         projection: @loaded.projection,
         runner: @loaded.runner,
         stream_provider: @loaded.stream_provider,
+        provider_kind: @loaded.provider_kind,
         max_turns: @max_turns,
         on_stream_event: block
       ).run

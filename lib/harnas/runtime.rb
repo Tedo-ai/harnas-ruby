@@ -50,6 +50,7 @@ module Harnas
         runner: loaded.runner,
         provider: loaded.provider,
         ingestor: loaded.ingestor,
+        provider_kind: loaded.provider_kind,
         max_turns: max_turns
       )
     end
