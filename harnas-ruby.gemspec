@@ -2,13 +2,12 @@
 
 Gem::Specification.new do |spec|
   spec.name = "harnas-ruby"
-  spec.version = "0.19.4"
+  spec.version = "0.20.0"
   spec.authors = ["René van Pelt"]
   spec.email = ["contact@renevanpe.lt"]
 
   spec.summary = "Ruby reference implementation of Harnas"
-  spec.description = "Ruby reference implementation of Harnas, " \
-                     "a specification for LLM agent harnesses."
+  spec.description = "Ruby reference implementation of the Harnas agent substrate."
   spec.homepage = "https://github.com/Tedo-ai/harnas-ruby"
   spec.license = "MIT"
   # The runtime uses Ruby's Data class, which is available in Ruby 3.2+.
@@ -28,6 +27,7 @@ Gem::Specification.new do |spec|
   spec.executables = ["harnas"]
   spec.require_paths = ["lib"]
 
+  spec.add_dependency "base64", "~> 0.3"
   spec.add_dependency "dotenv", "~> 3.1"
   spec.add_dependency "httpx", "~> 1.7"
   spec.add_dependency "json_schemer", "~> 2.5"

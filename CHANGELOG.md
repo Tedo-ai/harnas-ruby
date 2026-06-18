@@ -9,8 +9,20 @@ the specification as a whole.
 
 ## [Unreleased]
 
+### Added
+
+- Added v0.20 durability primitives: harnas-jcs-v1 canonicalization,
+  Event `content_hash`, storage adapters, and the OCC `expected_next_seq`
+  append fence.
+- Added fixture-gated tests for the §24 oracle corpus and §21 storage law
+  fixtures.
+
 ### Changed
 
+- Bumped gem metadata and MCP client version to 0.20.0. Validated against
+  fixtures version `0.20.0`: 75/75.
+- Declared the `base64` runtime dependency explicitly for Ruby versions
+  where it is no longer a default gem.
 - Added conformance replay support for malformed streaming provider
   frames. Validated against the expanded fixture set.
 - Added a README drift check that compares public version and fixture-count
