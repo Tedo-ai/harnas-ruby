@@ -6,6 +6,7 @@ require "harnas/content_blocks"
 require "harnas/log"
 require "harnas/mutations"
 require "harnas/observation"
+require "harnas/provider_carriers"
 
 module Harnas
   module Projections
@@ -74,6 +75,10 @@ module Harnas
         when :user_message, :summary
           messages << { role: "user", content: content(evt.payload) }
         when :assistant_message
+          if (wire = ProviderCarriers.wire(evt.payload[:provider_items], "openai.chat_completions"))
+            messages << ProviderCarriers.symbolize(wire)
+            return
+          end
           messages << { role: "assistant", content: content(evt.payload) }
         when :tool_use
           merge_tool_use(messages, evt)

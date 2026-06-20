@@ -5,6 +5,7 @@ require "harnas/capabilities"
 require "harnas/content_blocks"
 require "harnas/mutations"
 require "harnas/observation"
+require "harnas/provider_carriers"
 
 module Harnas
   module Projections
@@ -89,6 +90,9 @@ module Harnas
         when :user_message, :summary
           ["user", content_blocks(evt.payload)]
         when :assistant_message
+          if (wire = ProviderCarriers.wires(evt.payload[:provider_items], "anthropic.messages"))
+            return ["assistant", wire]
+          end
           translate_assistant_text(evt)
         when :tool_use
           ["assistant", {
@@ -116,6 +120,9 @@ module Harnas
         ContentBlocks.from_payload(payload).map do |block|
           case block[:type]
           when "text"
+            if (wire = ProviderCarriers.part_wire(block, "anthropic.messages"))
+              next wire
+            end
             { type: "text", text: block[:text].to_s }
           when "image"
             fallback = fallback_if_unsupported(block)
@@ -167,6 +174,9 @@ module Harnas
         Array(evt.payload[:reasoning]).filter_map do |block|
           next unless (block[:type] || block["type"]) == "text"
 
+          if (wire = ProviderCarriers.part_wire(block, "anthropic.messages"))
+            next wire
+          end
           text = block[:text] || block["text"]
           next unless text.is_a?(String)
 

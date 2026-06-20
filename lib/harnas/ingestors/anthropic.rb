@@ -3,6 +3,7 @@
 require "harnas/events/assistant_message"
 require "harnas/events/tool_use"
 require "harnas/observation"
+require "harnas/provider_carriers"
 require "harnas/usage"
 
 module Harnas
@@ -47,6 +48,26 @@ module Harnas
       def assistant_event(content, stop, usage, response)
         text = content.select { |b| b["type"] == "text" }.map { |b| b["text"].to_s }.join
         reasoning = reasoning_blocks(content)
+        if carrier_data?(content)
+          payload = {
+            text: text,
+            stop_reason: stop,
+            usage: Harnas::Usage.normalize(usage),
+            provider: "anthropic",
+            model: response["model"]
+          }
+          payload[:content] = text_content_with_carrier(text) unless text.empty?
+          payload[:reasoning] = reasoning if reasoning
+          carrier_content = content.reject { |block| block["type"] == "tool_use" || block[:type] == "tool_use" }
+          refs = ["payload.reasoning[0]"]
+          refs << "payload.content[0]" unless text.empty?
+          payload[:provider_items] = [
+            ProviderCarriers.carrier(destination: "anthropic.messages", index: 0,
+                                     kind: "anthropic.content", wire: carrier_content,
+                                     canonical_refs: refs)
+          ] unless carrier_content.empty?
+          return { type: :assistant_message, payload: payload }
+        end
         {
           type: :assistant_message,
           payload: Events::AssistantMessage.new(
@@ -61,10 +82,34 @@ module Harnas
           next unless block["type"] == "thinking"
 
           out = { type: "text", text: block["thinking"].to_s }
-          out[:signature] = block["signature"].to_s if block["signature"]
+          if block["signature"]
+            out[:signature] = block["signature"].to_s
+            out[:provider_parts] = [
+              ProviderCarriers.carrier(destination: "anthropic.messages", index: 0,
+                                       kind: "anthropic.content_block", wire: block,
+                                       canonical_refs: ["payload.reasoning[0]"])
+            ]
+          end
           out
         end
         blocks.empty? ? nil : blocks
+      end
+
+      def carrier_data?(content)
+        content.any? { |block| block["type"] == "thinking" && block["signature"] }
+      end
+
+      def text_content_with_carrier(text)
+        [{
+          type: "text",
+          text: text,
+          provider_parts: [
+            ProviderCarriers.carrier(destination: "anthropic.messages", index: 0,
+                                     kind: "anthropic.content_block",
+                                     wire: { "type" => "text", "text" => text },
+                                     canonical_refs: ["payload.content[0]"])
+          ]
+        }]
       end
 
       def tool_use_event(block)

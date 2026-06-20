@@ -4,6 +4,7 @@ require "json"
 require "harnas/events/assistant_message"
 require "harnas/events/tool_use"
 require "harnas/observation"
+require "harnas/provider_carriers"
 require "harnas/usage"
 
 module Harnas
@@ -47,6 +48,33 @@ module Harnas
       private
 
       def assistant_event(message, stop, usage, response)
+        if carrier_data?(message)
+          text = message["content"].to_s
+          payload = {
+            text: text,
+            content: [{
+              type: "text",
+              text: text,
+              provider_parts: [
+                ProviderCarriers.carrier(destination: "openai.chat_completions", index: 0,
+                                         kind: "openai.message_content",
+                                         wire: { "content" => text },
+                                         canonical_refs: ["payload.content[0]"])
+              ]
+            }],
+            stop_reason: stop,
+            usage: Harnas::Usage.normalize(usage),
+            provider: "openai",
+            model: response["model"]
+          }
+          payload[:reasoning] = reasoning_blocks(message)
+          payload[:provider_items] = [
+            ProviderCarriers.carrier(destination: "openai.chat_completions", index: 0,
+                                     kind: "openai.chat_message", wire: message,
+                                     canonical_refs: ["payload.content[0]", "payload.reasoning[0]"])
+          ]
+          return { type: :assistant_message, payload: payload }
+        end
         {
           type: :assistant_message,
           payload: Events::AssistantMessage.new(
@@ -69,9 +97,29 @@ module Harnas
           next unless detail.is_a?(Hash)
 
           text = detail["text"] || detail["reasoning"] || detail["content"]
-          blocks << { type: "text", text: text } if text.is_a?(String) && !text.empty?
+          next unless text.is_a?(String) && !text.empty?
+
+          block = { type: "text", text: text }
+          if reasoning_detail_carrier_data?(detail)
+            block[:provider_parts] = [
+              ProviderCarriers.carrier(destination: "openai.chat_completions", index: blocks.length,
+                                       kind: "openai.reasoning_detail", wire: detail,
+                                       canonical_refs: ["payload.reasoning[0]"])
+            ]
+          end
+          blocks << block
         end
         blocks.empty? ? nil : blocks
+      end
+
+      def carrier_data?(message)
+        Array(message["reasoning_details"]).any? do |detail|
+          detail.is_a?(Hash) && reasoning_detail_carrier_data?(detail)
+        end
+      end
+
+      def reasoning_detail_carrier_data?(detail)
+        detail.keys.any? { |key| !%w[type text reasoning content].include?(key.to_s) }
       end
 
       def tool_use_event(tool_call)

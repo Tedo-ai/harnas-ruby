@@ -4,6 +4,7 @@ require "harnas/events/annotation"
 require "harnas/events/assistant_message"
 require "harnas/events/tool_use"
 require "harnas/observation"
+require "harnas/provider_carriers"
 require "harnas/usage"
 
 module Harnas
@@ -66,6 +67,18 @@ module Harnas
       def assistant_event(parts, stop, usage, response)
         text = parts.map { |p| p["text"].to_s }.join
         reasoning = reasoning_blocks(parts)
+        if carrier_data?(parts)
+          payload = {
+            text: text,
+            content: content_blocks_with_carriers(parts),
+            stop_reason: stop,
+            usage: Harnas::Usage.normalize(usage),
+            provider: "gemini",
+            model: response["modelVersion"] || response["model"]
+          }
+          payload[:reasoning] = reasoning if reasoning
+          return { type: :assistant_message, payload: payload }
+        end
         {
           type: :assistant_message,
           payload: Events::AssistantMessage.new(
@@ -73,6 +86,28 @@ module Harnas
             provider: "gemini", model: response["modelVersion"] || response["model"]
           ).to_h
         }
+      end
+
+      def carrier_data?(parts)
+        parts.any? { |part| part["text"].is_a?(String) && (part.key?("thoughtSignature") || part.keys.size > 1) }
+      end
+
+      def content_blocks_with_carriers(parts)
+        blocks = parts.filter_map do |part|
+          text = part["text"]
+          next unless text.is_a?(String)
+
+          block = { type: "text", text: text }
+          if part.key?("thoughtSignature") || part.keys.size > 1
+            block[:provider_parts] = [
+              ProviderCarriers.carrier(destination: "gemini.generateContent", index: 0,
+                                       kind: "gemini.part", wire: part,
+                                       canonical_refs: ["payload.content[0]"])
+            ]
+          end
+          block
+        end
+        blocks.empty? ? [{ type: "text", text: "" }] : blocks
       end
 
       def reasoning_blocks(parts)

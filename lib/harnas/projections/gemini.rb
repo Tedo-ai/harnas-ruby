@@ -5,6 +5,7 @@ require "harnas/capabilities"
 require "harnas/content_blocks"
 require "harnas/mutations"
 require "harnas/observation"
+require "harnas/provider_carriers"
 
 module Harnas
   module Projections
@@ -123,6 +124,9 @@ module Harnas
         ContentBlocks.from_payload(payload).filter_map do |block|
           case block[:type]
           when "text"
+            if (wire = ProviderCarriers.part_wire(block, "gemini.generateContent"))
+              next wire
+            end
             text = block[:text].to_s
             text.empty? ? nil : { text: text }
           when "image", "document"
