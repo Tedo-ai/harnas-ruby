@@ -47,7 +47,9 @@ module Harnas
 
       private
 
-      def assistant_event(message, stop, usage, response)
+      # Carrier-aware payload assembly is intentionally inline to preserve the
+      # byte-identical provider shape; extracting helpers risks conformance drift.
+      def assistant_event(message, stop, usage, response) # rubocop:disable Metrics/MethodLength
         if carrier_data?(message)
           text = message["content"].to_s
           payload = {
@@ -88,7 +90,7 @@ module Harnas
         }
       end
 
-      def reasoning_blocks(message)
+      def reasoning_blocks(message) # rubocop:disable Metrics/AbcSize
         blocks = []
         if message["reasoning"].is_a?(String) && !message["reasoning"].empty?
           blocks << { type: "text", text: message["reasoning"] }

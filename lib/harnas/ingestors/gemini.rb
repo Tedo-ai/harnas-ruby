@@ -89,7 +89,9 @@ module Harnas
       end
 
       def carrier_data?(parts)
-        parts.any? { |part| part["text"].is_a?(String) && (part.key?("thoughtSignature") || part.keys.size > 1) }
+        parts.any? do |part|
+          part["text"].is_a?(String) && (part.key?("thoughtSignature") || part.keys.size > 1)
+        end
       end
 
       def content_blocks_with_carriers(parts)

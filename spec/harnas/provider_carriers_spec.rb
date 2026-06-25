@@ -15,28 +15,35 @@ RSpec.describe "provider carrier fixtures" do
   end
   carrier_root = File.join(spec_root, "conformance", "provider-carriers")
 
-  Dir.glob(File.join(carrier_root, "*", "fixture.json")).sort.each do |fixture_path|
+  Dir.glob(File.join(carrier_root, "*", "fixture.json")).each do |fixture_path|
     name = File.basename(File.dirname(fixture_path))
 
     it "passes #{name}" do
       fixture = JSON.parse(File.read(fixture_path))
 
-      events = ingestor_for(fixture.dig("provider", "kind")).call(fixture.dig("ingest", "provider_response"))
+      events = ingestor_for(fixture.dig("provider",
+                                        "kind")).call(fixture.dig("ingest", "provider_response"))
       actual = events.fetch(0)
       actual[:payload][:provider] ||= fixture.dig("provider", "kind")
       actual[:payload][:model] ||= fixture.dig("provider", "model")
-      expect(normalize(actual)).to eq(normalize(symbolize_event(fixture.dig("ingest", "expect_event"))))
+      expect(normalize(actual)).to eq(normalize(symbolize_event(fixture.dig("ingest",
+                                                                            "expect_event"))))
 
       log = Harnas::Log.new
       fixture.dig("project", "log").each do |row|
         log.append(type: row.fetch("type").to_sym, payload: deep_symbolize(row.fetch("payload")))
       end
-      request = projection_for(fixture.dig("provider", "kind"), fixture.dig("provider", "model")).call(log)
+      request = projection_for(fixture.dig("provider", "kind"),
+                               fixture.dig("provider", "model")).call(log)
       expect(normalize(request)).to eq(normalize(fixture.dig("project", "expect_request")))
 
-      roundtrip = ingestor_for(fixture.dig("provider", "kind")).call(fixture.dig("ingest", "provider_response"))
-      expect(normalize(roundtrip.fetch(0)[:payload].slice(:provider_items, :content, :reasoning).compact))
-        .to eq(normalize(deep_symbolize(fixture.dig("ingest", "expect_event", "payload")).slice(:provider_items, :content, :reasoning).compact))
+      roundtrip = ingestor_for(fixture.dig("provider",
+                                           "kind")).call(fixture.dig("ingest", "provider_response"))
+      expect(normalize(roundtrip.fetch(0)[:payload].slice(:provider_items, :content,
+                                                          :reasoning).compact))
+        .to eq(normalize(deep_symbolize(fixture.dig("ingest", "expect_event", "payload")).slice(
+          :provider_items, :content, :reasoning
+        ).compact))
     end
   end
 

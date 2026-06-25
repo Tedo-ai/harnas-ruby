@@ -93,6 +93,7 @@ module Harnas
           if (wire = ProviderCarriers.wires(evt.payload[:provider_items], "anthropic.messages"))
             return ["assistant", wire]
           end
+
           translate_assistant_text(evt)
         when :tool_use
           ["assistant", {
@@ -123,6 +124,7 @@ module Harnas
             if (wire = ProviderCarriers.part_wire(block, "anthropic.messages"))
               next wire
             end
+
             { type: "text", text: block[:text].to_s }
           when "image"
             fallback = fallback_if_unsupported(block)
@@ -177,6 +179,7 @@ module Harnas
           if (wire = ProviderCarriers.part_wire(block, "anthropic.messages"))
             next wire
           end
+
           text = block[:text] || block["text"]
           next unless text.is_a?(String)
 
