@@ -127,6 +127,7 @@ module Harnas
             if (wire = ProviderCarriers.part_wire(block, "gemini.generateContent"))
               next wire
             end
+
             text = block[:text].to_s
             text.empty? ? nil : { text: text }
           when "image", "document"

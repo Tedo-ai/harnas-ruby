@@ -45,7 +45,9 @@ module Harnas
 
       private
 
-      def assistant_event(content, stop, usage, response)
+      # Carrier-aware payload assembly is intentionally inline to preserve the
+      # byte-identical provider shape; extracting helpers risks conformance drift.
+      def assistant_event(content, stop, usage, response) # rubocop:disable Metrics/AbcSize,Metrics/MethodLength
         text = content.select { |b| b["type"] == "text" }.map { |b| b["text"].to_s }.join
         reasoning = reasoning_blocks(content)
         if carrier_data?(content)
@@ -58,14 +60,18 @@ module Harnas
           }
           payload[:content] = text_content_with_carrier(text) unless text.empty?
           payload[:reasoning] = reasoning if reasoning
-          carrier_content = content.reject { |block| block["type"] == "tool_use" || block[:type] == "tool_use" }
+          carrier_content = content.reject do |block|
+            block["type"] == "tool_use" || block[:type] == "tool_use"
+          end
           refs = ["payload.reasoning[0]"]
           refs << "payload.content[0]" unless text.empty?
-          payload[:provider_items] = [
-            ProviderCarriers.carrier(destination: "anthropic.messages", index: 0,
-                                     kind: "anthropic.content", wire: carrier_content,
-                                     canonical_refs: refs)
-          ] unless carrier_content.empty?
+          unless carrier_content.empty?
+            payload[:provider_items] = [
+              ProviderCarriers.carrier(destination: "anthropic.messages", index: 0,
+                                       kind: "anthropic.content", wire: carrier_content,
+                                       canonical_refs: refs)
+            ]
+          end
           return { type: :assistant_message, payload: payload }
         end
         {
