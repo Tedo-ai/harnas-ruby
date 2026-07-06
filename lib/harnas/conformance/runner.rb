@@ -14,6 +14,7 @@ require "harnas/tools/snapshot"
 require "harnas/projection"
 require "harnas/conformance/scripted_provider"
 require "harnas/conformance/scripted_stream_provider"
+require "harnas/approval"
 
 module Harnas
   module Conformance
@@ -313,21 +314,51 @@ module Harnas
       end
 
       def self.drive_input(loaded, scripted, input, manifest:, streaming: false)
-        if input.is_a?(Hash) && input.key?("compact")
-          return append_compact(loaded, input.fetch("compact"))
+        if input.is_a?(Hash)
+          action = drive_action(loaded, scripted, input, manifest: manifest, streaming: streaming)
+          return action unless action.nil?
         end
-        if input.is_a?(Hash) && input.key?("revert")
-          return append_revert(loaded, input.fetch("revert"))
-        end
-        if input.is_a?(Hash) && input.key?("append_events")
-          return append_events(loaded, input.fetch("append_events"))
-        end
-        if input.is_a?(Hash) && input.key?("fork")
-          return fork_loaded(loaded, input.fetch("fork").fetch("at_seq"))
-        end
-        return save_load(loaded, manifest: manifest) if input.is_a?(Hash) && input.key?("save_load")
 
         append_user_message(loaded, input)
+        run_loop(loaded, scripted, streaming: streaming)
+        loaded
+      end
+
+      def self.drive_action(loaded, scripted, input, manifest:, streaming:)
+        return append_compact(loaded, input.fetch("compact")) if input.key?("compact")
+        return append_revert(loaded, input.fetch("revert")) if input.key?("revert")
+        if input.key?("approve")
+          return resolve_approval(loaded, scripted, input.fetch("approve"),
+                                  approve: true, streaming: streaming)
+        end
+        if input.key?("deny")
+          return resolve_approval(loaded, scripted, input.fetch("deny"),
+                                  approve: false, streaming: streaming)
+        end
+        return append_events(loaded, input.fetch("append_events")) if input.key?("append_events")
+        return fork_loaded(loaded, input.fetch("fork").fetch("at_seq")) if input.key?("fork")
+        return save_load(loaded, manifest: manifest) if input.key?("save_load")
+
+        nil
+      end
+
+      def self.resolve_approval(loaded, scripted, spec, approve:, streaming: false)
+        if approve
+          Harnas::Approval.approve(
+            session: loaded.session,
+            runner: loaded.runner,
+            tool_use_id: spec.fetch("tool_use_id"),
+            resolved_by: spec["resolved_by"],
+            reason: spec["reason"]
+          )
+        else
+          Harnas::Approval.deny(
+            session: loaded.session,
+            tool_use_id: spec.fetch("tool_use_id"),
+            reason: spec.fetch("reason"),
+            resolved_by: spec["resolved_by"]
+          )
+        end
         run_loop(loaded, scripted, streaming: streaming)
         loaded
       end

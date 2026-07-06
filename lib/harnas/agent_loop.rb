@@ -72,7 +72,11 @@ module Harnas
             break
           end
 
-          dispatched = dispatch_pending_tools
+          dispatched, awaiting = dispatch_pending_tools
+          if awaiting
+            reason = :awaiting_approval
+            break
+          end
           if terminal_runtime_error?
             reason = :runtime_failed
             break
@@ -248,20 +252,54 @@ module Harnas
       kind.to_s.empty? ? "unknown" : kind.to_s
     end
 
+    # Two-pass dispatch (spec/07-permission.md R7-R8): first compose every
+    # pending tool_use's :pre_tool_use decision; any pending_approval verdict
+    # (on a tool_use not already refused) pauses the batch atomically — no
+    # tool_use executes, only :approval_requested Events are appended, and the
+    # run ends with the :awaiting_approval outcome.
     def dispatch_pending_tools
       pending = pending_tool_uses
-      pending.each { |tu| dispatch_one_tool(tu) }
-      pending
+      decisions_list = pending.map do |tool_use|
+        @session.hooks.invoke(:pre_tool_use, session: @session, tool_use: tool_use)
+      end
+      requests = approval_requests(pending, decisions_list)
+      if requests.any?
+        requests.each { |tool_use, decision| append_approval_request(tool_use, decision) }
+        return [pending, true]
+      end
+      pending.each_with_index do |tool_use, index|
+        dispatch_one_tool(tool_use, decisions_list[index])
+      end
+      [pending, false]
+    end
+
+    def approval_requests(pending, decisions_list)
+      pending.each_with_index.filter_map do |tool_use, index|
+        decisions = decisions_list[index]
+        next if decisions.any? { |d| d.is_a?(Hash) && d[:allow] == false }
+
+        decision = decisions.find { |d| d.is_a?(Hash) && d[:pending_approval] == true }
+        [tool_use, decision] if decision
+      end
+    end
+
+    def append_approval_request(tool_use_event, decision)
+      @session.log.append(
+        type: :approval_requested,
+        payload: {
+          tool_use_id: payload_value(tool_use_event, :id),
+          reason: decision[:reason],
+          requested_by: decision[:requested_by]
+        }
+      )
     end
 
     def terminal_runtime_error?
       @session.log.any? { |event| event.type == :runtime_error && event.payload[:terminal] }
     end
 
-    def dispatch_one_tool(tool_use_event)
-      decisions = @session.hooks.invoke(:pre_tool_use, session: @session,
-                                                       tool_use: tool_use_event)
-      denied    = decisions.find { |d| d.is_a?(Hash) && d[:allow] == false }
+    def dispatch_one_tool(tool_use_event, decisions)
+      denied = decisions.find { |d| d.is_a?(Hash) && d[:allow] == false }
 
       if denied
         append_denial(tool_use_event, denied[:reason])

@@ -299,6 +299,8 @@ module Harnas
         "harnas/strategies/permission/always_allow",
       "Permission::DenyByName" =>
         "harnas/strategies/permission/deny_by_name",
+      "Permission::RequireApproval" =>
+        "harnas/strategies/permission/require_approval",
       "Permission::HumanApproval" =>
         "harnas/strategies/permission/human_approval",
       "sandbox/write" =>
@@ -330,6 +332,8 @@ module Harnas
         "Harnas::Strategies::Permission::AlwaysAllow",
       "Permission::DenyByName" =>
         "Harnas::Strategies::Permission::DenyByName",
+      "Permission::RequireApproval" =>
+        "Harnas::Strategies::Permission::RequireApproval",
       "Permission::HumanApproval" =>
         "Harnas::Strategies::Permission::HumanApproval",
       "sandbox/write" =>
