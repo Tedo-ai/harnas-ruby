@@ -2,6 +2,7 @@
 
 require "harnas/agent"
 require "harnas/agent_loop"
+require "harnas/approval"
 require "harnas/attachments"
 require "harnas/capability_manifest"
 require "harnas/config"
