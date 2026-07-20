@@ -6,6 +6,7 @@ require "json"
 require "securerandom"
 
 require_relative "errors"
+require_relative "stream_support"
 require_relative "../events/assistant_turn_started"
 require_relative "../events/assistant_text_delta"
 require_relative "../events/tool_use_begin"
@@ -47,21 +48,15 @@ module Harnas
       end
 
       def call(request, &block)
-        turn_id = SecureRandom.uuid
-        state   = new_turn_state(turn_id)
-        yield_event(block, :assistant_turn_started,
-                    Events::AssistantTurnStarted.new(turn_id: turn_id).to_h)
-
+        state = StreamSupport::OpenAIState.new(turn_id: SecureRandom.uuid, emit: block)
+        state.start
         stream_wire_events(
           request.merge(stream: true, stream_options: { include_usage: true }),
           state, &block
         )
-        yield_completion(state, &block)
+        state.finish
       rescue StandardError => e
-        yield_event(block, :assistant_turn_failed,
-                    Events::AssistantTurnFailed.new(
-                      turn_id: turn_id, error: "#{e.class}: #{e.message}"
-                    ).to_h)
+        state&.fail(e)
         raise
       end
 
@@ -164,7 +159,7 @@ module Harnas
       end
 
       def consume_chunked_sse(socket, state, &)
-        sse_buffer = +""
+        sse_buffer = +"".b
         loop do
           size_line = socket.readline("\r\n").to_s.strip
           size      = size_line.to_i(16)
@@ -175,9 +170,16 @@ module Harnas
             data = socket.readpartial([remaining, 4096].min)
             remaining -= data.bytesize
             sse_buffer << data
-            flush_complete_sse_lines(sse_buffer, state, &)
+            StreamSupport.dispatch_complete_blocks(
+              sse_buffer, provider: "openai"
+            ) { |payload| state.data(payload) }
           end
           socket.readline("\r\n") # consume trailing CRLF
+        end
+        return if sse_buffer.empty?
+
+        StreamSupport.dispatch_block(sse_buffer, provider: "openai") do |payload|
+          state.data(payload)
         end
       end
 

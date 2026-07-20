@@ -116,6 +116,9 @@ RSpec.describe Harnas::Providers::AnthropicStream do
   describe "tool_use stream" do
     let(:sse) do
       <<~SSE
+        event: message_start
+        data: {"type":"message_start","message":{"usage":{"input_tokens":4,"output_tokens":0}}}
+
         event: content_block_start
         data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"echo","input":{}}}
 

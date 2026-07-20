@@ -6,6 +6,7 @@ require "json"
 require "securerandom"
 
 require_relative "errors"
+require_relative "stream_support"
 require_relative "../events/assistant_turn_started"
 require_relative "../events/assistant_text_delta"
 require_relative "../events/tool_use_begin"
@@ -44,18 +45,12 @@ module Harnas
       end
 
       def call(request, &block)
-        turn_id = SecureRandom.uuid
-        state   = new_turn_state(turn_id)
-        yield_event(block, :assistant_turn_started,
-                    Events::AssistantTurnStarted.new(turn_id: turn_id).to_h)
-
+        state = StreamSupport::GeminiState.new(turn_id: SecureRandom.uuid, emit: block)
+        state.start
         stream_wire_events(request, state, &block)
-        yield_completion(state, &block)
+        state.finish
       rescue StandardError => e
-        yield_event(block, :assistant_turn_failed,
-                    Events::AssistantTurnFailed.new(
-                      turn_id: turn_id, error: "#{e.class}: #{e.message}"
-                    ).to_h)
+        state&.fail(e)
         raise
       end
 
@@ -173,9 +168,14 @@ module Harnas
       end
 
       def consume_chunked_sse(socket, state, &)
-        sse_buffer = +""
+        sse_buffer = +"".b
         loop { break unless read_one_chunk?(socket, sse_buffer, state, &) }
         trace("buffer after loop (#{sse_buffer.bytesize} bytes): #{sse_buffer.inspect}")
+        return if sse_buffer.empty?
+
+        StreamSupport.dispatch_block(sse_buffer, provider: "gemini") do |payload|
+          state.data(payload)
+        end
       end
 
       def read_one_chunk?(socket, sse_buffer, state, &)
@@ -191,7 +191,9 @@ module Harnas
           trace("read #{data.bytesize} bytes of chunk")
           remaining -= data.bytesize
           sse_buffer << data
-          flush_complete_sse_events(sse_buffer, state, &)
+          StreamSupport.dispatch_complete_blocks(
+            sse_buffer, provider: "gemini"
+          ) { |payload| state.data(payload) }
         end
         trailer = socket.readline("\r\n")
         trace("trailer=#{trailer.inspect}")

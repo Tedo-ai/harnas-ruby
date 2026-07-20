@@ -11,6 +11,10 @@ the specification as a whole.
 
 ### Added
 
+- Raw provider-wire conformance for Anthropic, OpenAI, and Gemini: 18 logical
+  cases and 39 deterministic byte-fragmented executions through the shared
+  production parser used by both Net::HTTP and raw-socket Live transports.
+- A standalone `bin/provider_wire_conformance.rb` runner.
 - Added v0.20 durability primitives: harnas-jcs-v1 canonicalization,
   Event `content_hash`, storage adapters, and the OCC `expected_next_seq`
   append fence.
@@ -19,6 +23,9 @@ the specification as a whole.
 
 ### Changed
 
+- Built-in stream adapters now fail closed on provider error frames,
+  malformed JSON or UTF-8, invalid tool lifecycles, and missing terminal
+  evidence, without producing a durable result after failure.
 - Bumped gem metadata and MCP client version to 0.20.0. Validated against
   fixtures version `0.20.0`: 75/75.
 - Declared the `base64` runtime dependency explicitly for Ruby versions
