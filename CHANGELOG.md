@@ -23,6 +23,9 @@ the specification as a whole.
 
 ### Changed
 
+- Bumped gem metadata and MCP client version to 0.22.0. Validated against
+  fixtures version `0.22.0`: 78/78 agent fixtures plus 39/39 provider-wire
+  executions.
 - Built-in stream adapters now fail closed on provider error frames,
   malformed JSON or UTF-8, invalid tool lifecycles, and missing terminal
   evidence, without producing a durable result after failure.

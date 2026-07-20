@@ -5,7 +5,7 @@ a specification for LLM agent harnesses. Passes 78/78 conformance fixtures
 against the spec; live providers Anthropic + OpenAI + Gemini + Ollama; 714 RSpec
 examples; rubocop clean.
 
-**Version 0.21.0** (in development). Tracks Harnas spec 0.21.0.
+**Version 0.22.0** (in development). Tracks Harnas spec 0.22.0.
 
 Raw provider-wire conformance: 18/18 cases and 39/39 deterministic
 byte-fragmented executions through the production Anthropic, OpenAI, and
