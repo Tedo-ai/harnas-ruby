@@ -62,7 +62,7 @@ module Harnas
         @max_turns.times do |turn|
           stop_reason = run_turn(turn)
 
-          if %i[provider_failed runtime_failed].include?(stop_reason)
+          if %i[provider_failed runtime_failed incomplete_tool_batch].include?(stop_reason)
             reason = stop_reason
             break
           end
@@ -111,14 +111,47 @@ module Harnas
     else
       @session.hooks.invoke(:post_projection, session: @session, request: request)
 
+      turn_start = @session.log.size
       ok = call_provider_with_retry(request)
       return :provider_failed unless ok
 
-      last_assistant = @session.log.reverse_each.find { |e| e.type == :assistant_message }
-      stop_reason    = last_assistant.payload[:stop_reason]
+      stop_reason = finalize_provider_step(turn_start)
 
       @session.hooks.invoke(:turn_ended, session: @session, turn: turn, stop_reason: stop_reason)
       stop_reason
+    end
+
+    def finalize_provider_step(turn_start)
+      last_assistant = @session.log.reverse_each.find { |event| event.type == :assistant_message }
+      stop_reason = last_assistant.payload[:stop_reason]
+      turn_events = @session.log.since(turn_start - 1)
+      return :incomplete_tool_batch if close_incomplete_tool_batch?(turn_events, stop_reason)
+
+      stop_reason
+    end
+
+    def close_incomplete_tool_batch?(turn_events, stop_reason)
+      tool_uses = turn_events.select { |event| event.type == :tool_use }
+      return false if tool_uses.empty? || stop_reason == :tool_use
+
+      tool_uses.each do |tool_use|
+        id = payload_value(tool_use, :id)
+        name = payload_value(tool_use, :name)
+        message = "tool #{name} did not complete: assistant turn ended with " \
+                  "stop_reason #{stop_reason} before a tool result was recorded"
+        @session.log.append(
+          type: :tool_result,
+          payload: {
+            tool_use_id: id,
+            output: nil,
+            error: message,
+            error_class: "IncompleteToolResult",
+            reason: "incomplete_tool_result",
+            stop_reason: stop_reason
+          }
+        )
+      end
+      true
     end
 
     # Drives one provider call, retrying transient failures per the
