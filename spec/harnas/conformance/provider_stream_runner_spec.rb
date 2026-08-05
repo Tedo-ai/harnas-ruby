@@ -12,7 +12,7 @@ RSpec.describe Harnas::Conformance::ProviderStreamRunner do
 
     report = described_class.run(HarnasSpecPaths.spec_root)
 
-    expect(report.cases).to eq(18)
-    expect(report.profiles).to eq(39)
+    expect(report.cases).to eq(19)
+    expect(report.profiles).to eq(41)
   end
 end

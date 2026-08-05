@@ -135,6 +135,46 @@ RSpec.describe Harnas::AgentLoop do
     end
   end
 
+  describe "a complete tool call under a non-tool stop reason" do
+    it "invokes no tool, closes the pair, and returns incomplete_tool_batch" do
+      calls = 0
+      registry = Harnas::Tools::Registry.new
+      registry.register(
+        Harnas::Tools::Tool.new(name: "echo", description: "", input_schema: {}) do |_args|
+          calls += 1
+          "unexpected"
+        end
+      )
+      events = [
+        { type: :assistant_message,
+          payload: Harnas::Events::AssistantMessage.new(
+            text: "", stop_reason: :max_tokens, usage: {}
+          ).to_h },
+        { type: :tool_use,
+          payload: Harnas::Events::ToolUse.new(
+            id: "toolu_truncated", name: "echo", arguments: {}
+          ).to_h }
+      ]
+      loop_runner = described_class.new(
+        session: session,
+        projection: projection,
+        provider: ScriptedProvider.new([:response]),
+        ingestor: ScriptedIngestor.new([events]),
+        runner: Harnas::Tools::Runner.new(registry)
+      )
+
+      expect(loop_runner.run).to eq(:incomplete_tool_batch)
+      expect(calls).to be(0)
+      result = session.log.find { |event| event.type == :tool_result }
+      expect(result.payload).to include(
+        tool_use_id: "toolu_truncated",
+        error_class: "IncompleteToolResult",
+        reason: "incomplete_tool_result",
+        stop_reason: :max_tokens
+      )
+    end
+  end
+
   describe "hook invocation points" do
     let(:registry) do
       r = Harnas::Tools::Registry.new
