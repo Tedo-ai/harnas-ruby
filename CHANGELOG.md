@@ -11,12 +11,12 @@ the specification as a whole.
 
 - AgentLoop closes complete tool calls emitted under a non-tool stop reason
   with canonical failure results, invokes zero tools, and returns
-  `incomplete_tool_batch`; 79/79 agent fixtures pass.
+  `incomplete_tool_batch`; the proposed Integrity Core fixture passes.
 
 ### Added
 
-- Raw provider-wire conformance for Anthropic, OpenAI, and Gemini: 19 logical
-  cases and 41 deterministic byte-fragmented executions through the shared
+- Raw provider-wire conformance for Anthropic, OpenAI, and Gemini: 18 logical
+  cases and 39 deterministic byte-fragmented executions through the shared
   production parser used by both Net::HTTP and raw-socket Live transports.
 - A standalone `bin/provider_wire_conformance.rb` runner.
 - Added v0.20 durability primitives: harnas-jcs-v1 canonicalization,
@@ -28,7 +28,7 @@ the specification as a whole.
 ### Changed
 
 - Bumped gem metadata and MCP client version to 0.22.0. Validated against
-  fixtures version `0.22.0`: 79/79 agent fixtures plus 41/41 provider-wire
+  fixtures version `0.22.0`: 78/78 agent fixtures plus 39/39 provider-wire
   executions.
 - Built-in stream adapters now fail closed on provider error frames,
   malformed JSON or UTF-8, invalid tool lifecycles, and missing terminal
